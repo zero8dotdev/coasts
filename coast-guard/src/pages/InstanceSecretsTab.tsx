@@ -133,8 +133,8 @@ export default function InstanceSecretsTab({ project, name, buildId }: Props) {
             <button
               onClick={(e) => { e.stopPropagation(); void handleReveal(r.name); }}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium
-                bg-white/5 border border-[var(--border)] text-[var(--primary)]
-                hover:bg-white/10 transition-colors"
+                bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--primary)]
+                hover:bg-[var(--surface-hover)] transition-colors"
             >
               <Eye size={12} />
               {t('secrets.show')}
@@ -164,7 +164,7 @@ export default function InstanceSecretsTab({ project, name, buildId }: Props) {
   return (
     <>
       <div className="glass-panel overflow-hidden">
-        <div className="flex items-center gap-2 flex-wrap px-4 py-2 bg-white/20 dark:bg-white/5 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2 flex-wrap px-4 py-2 bg-[var(--surface-muted)] border-b border-[var(--border)]">
           <button
             onClick={() => void handleRerunExtractors()}
             disabled={rerunning}
@@ -225,7 +225,7 @@ export default function InstanceSecretsTab({ project, name, buildId }: Props) {
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               rows={12}
-              className="w-full text-xs font-mono bg-slate-800/60 dark:bg-slate-900/60 text-slate-200 p-3 rounded-lg border border-[var(--border)] resize-y focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+              className="w-full text-xs font-mono bg-[var(--code-block-bg)] text-[var(--code-block-text)] p-3 rounded-lg border border-[var(--border)] resize-y focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
               spellCheck={false}
             />
             <div className="flex items-center justify-end gap-2">

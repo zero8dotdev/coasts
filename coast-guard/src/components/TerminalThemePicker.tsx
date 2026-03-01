@@ -46,7 +46,7 @@ export default function TerminalThemePicker({ themes, activeId, onSelect }: Prop
       <button
         ref={btnRef}
         onClick={() => { updatePosition(); setOpen((prev) => !prev); }}
-        className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:text-main hover:bg-white/25 dark:hover:bg-white/10 transition-colors shrink-0"
+        className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors shrink-0"
         title={t('termTheme.label')}
       >
         <Palette size={18} />
@@ -67,8 +67,8 @@ export default function TerminalThemePicker({ themes, activeId, onSelect }: Prop
               }}
               className={`w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors ${
                 theme.id === activeId
-                  ? 'text-main font-semibold bg-white/20 dark:bg-white/10'
-                  : 'text-muted-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8'
+                  ? 'text-main font-semibold bg-[var(--surface-strong)]'
+                  : 'text-muted-ui hover:text-main hover:bg-[var(--surface-hover)]'
               }`}
             >
               <span

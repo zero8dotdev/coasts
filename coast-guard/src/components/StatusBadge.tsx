@@ -9,7 +9,7 @@ const STATUS_STYLES: Readonly<Record<InstanceStatus, { readonly dot: string; rea
   stopping: { dot: 'bg-pink-500 animate-pulse', bg: 'bg-pink-500/12 border border-pink-500/30', text: 'text-pink-700 dark:text-pink-300', label: 'status.stopping' },
   running: { dot: 'bg-emerald-500', bg: 'bg-emerald-500/12 border border-emerald-500/30', text: 'text-emerald-700 dark:text-emerald-300', label: 'status.running' },
   stopped: { dot: 'bg-rose-500', bg: 'bg-rose-500/12 border border-rose-500/30', text: 'text-rose-700 dark:text-rose-300', label: 'status.stopped' },
-  checked_out: { dot: 'bg-blue-500', bg: 'bg-blue-500/12 border border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', label: 'status.checkedOut' },
+  checked_out: { dot: 'bg-[var(--primary)]', bg: 'bg-[var(--primary)]/12 border border-[var(--primary)]/30', text: 'text-[var(--primary-strong)] dark:text-[var(--primary)]', label: 'status.checkedOut' },
   idle: { dot: 'bg-amber-500', bg: 'bg-amber-500/12 border border-amber-500/30', text: 'text-amber-700 dark:text-amber-300', label: 'status.idle' },
 };
 

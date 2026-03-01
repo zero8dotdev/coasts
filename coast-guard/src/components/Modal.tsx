@@ -27,18 +27,18 @@ export default function Modal({ open, title, onClose, children, actions, wide }:
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className={`glass-panel ${wide ? 'max-w-lg' : 'max-w-md'} w-full mx-4 border border-slate-200/80 dark:border-white/10`}
+        className={`glass-panel ${wide ? 'max-w-lg' : 'max-w-md'} w-full mx-4 border border-[var(--border-strong)] shadow-[var(--shadow-modal)] dark:shadow-[var(--shadow-modal-dark)]`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
           <h3 className="text-base font-semibold text-main">{title}</h3>
           <button
             onClick={onClose}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-subtle-ui hover:text-main hover:bg-white/30 dark:hover:bg-white/10 transition-colors"
+            className="h-7 w-7 flex items-center justify-center rounded-md text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           >
             ×
           </button>

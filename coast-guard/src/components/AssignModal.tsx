@@ -12,7 +12,7 @@ interface AssignModalProps {
 }
 
 const inputClass =
-  'w-full h-9 px-3 text-sm rounded-md border border-slate-300 dark:border-[var(--border)] bg-white/70 dark:bg-transparent text-main outline-none focus:border-[var(--primary)] placeholder:text-slate-500 dark:placeholder:text-subtle-ui';
+  'w-full h-9 px-3 text-sm rounded-md border border-[var(--border)] bg-[var(--surface-solid)] dark:bg-transparent text-main outline-none focus:border-[var(--primary)] placeholder:text-subtle-ui';
 
 export default function AssignModal({
   open, instanceName, worktrees, occupiedWorktrees, onAssign, onClose,
@@ -77,9 +77,9 @@ export default function AssignModal({
                   onChange={(e) => setFilter(e.target.value)}
                 />
               )}
-              <div className="max-h-48 overflow-y-auto rounded-md border border-slate-300 dark:border-[var(--border)] bg-white/60 dark:bg-transparent py-1">
+              <div className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-muted)] dark:bg-transparent py-1">
                 {availableWorktrees.length === 0 ? (
-                  <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-subtle-ui">
+                  <div className="px-3 py-4 text-center text-xs text-subtle-ui">
                     {t('assign.noWorktrees')}
                   </div>
                 ) : (
@@ -90,10 +90,10 @@ export default function AssignModal({
                       disabled={occupied}
                       className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors ${
                         occupied
-                          ? 'text-slate-400 dark:text-subtle-ui cursor-not-allowed opacity-50'
+                          ? 'text-subtle-ui cursor-not-allowed opacity-50'
                           : selected === name
                             ? 'bg-[var(--primary)]/15 text-[var(--primary)]'
-                            : 'text-main hover:bg-slate-200/60 dark:hover:bg-white/5'
+                            : 'text-main hover:bg-[var(--surface-hover)]'
                       }`}
                       onClick={() => {
                         setSelected(name);
@@ -102,7 +102,7 @@ export default function AssignModal({
                     >
                       <span>{name}</span>
                       {occupied && (
-                        <span className="ml-2 text-[10px] text-slate-500 dark:text-subtle-ui">
+                        <span className="ml-2 text-[10px] text-subtle-ui">
                           {t('assign.branchOccupied')}
                         </span>
                       )}
@@ -113,10 +113,10 @@ export default function AssignModal({
             </div>
 
             {/* Divider */}
-            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-subtle-ui">
-              <div className="flex-1 border-t border-slate-300 dark:border-[var(--border)]" />
+            <div className="flex items-center gap-3 text-xs text-subtle-ui">
+              <div className="flex-1 border-t border-[var(--border)]" />
               <span>{t('assign.orCreateNew')}</span>
-              <div className="flex-1 border-t border-slate-300 dark:border-[var(--border)]" />
+              <div className="flex-1 border-t border-[var(--border)]" />
             </div>
           </>
         )}
@@ -124,7 +124,7 @@ export default function AssignModal({
         {/* Custom worktree input */}
         <div>
           {!hasExistingWorktrees && (
-            <p className="mb-2 text-xs text-slate-500 dark:text-subtle-ui">{t('assign.noWorktrees')}</p>
+            <p className="mb-2 text-xs text-subtle-ui">{t('assign.noWorktrees')}</p>
           )}
           <input
             type="text"

@@ -142,7 +142,7 @@ export default function BuildModal({ open, project, onClose, onComplete }: Build
         <div className="space-y-3">
           {coastfileTypes.length > 1 && (
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-2 block">{t('build.type')}</label>
+              <label className="text-xs font-semibold text-main mb-2 block">{t('build.type')}</label>
               <div className="flex flex-wrap gap-1.5 pt-0.5 pb-0.5">
                 {coastfileTypes.map((ct) => (
                   <button
@@ -151,8 +151,8 @@ export default function BuildModal({ open, project, onClose, onComplete }: Build
                     onClick={() => setSelectedType(ct)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-mono border cursor-pointer transition-colors ${
                       selectedType === ct
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10'
+                        ? 'bg-[var(--primary)] border-[var(--primary-strong)] text-white'
+                        : 'bg-[var(--surface-muted)] border-[var(--border)] text-main hover:bg-[var(--surface-strong)]'
                     }`}
                   >
                     {ct}
@@ -208,7 +208,7 @@ export default function BuildModal({ open, project, onClose, onComplete }: Build
 
           <div
             ref={logRef}
-            className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-slate-950/60 dark:bg-slate-950/80 p-2 font-mono text-[11px] text-slate-300"
+            className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--code-block-bg)] p-2 font-mono text-[11px] text-[var(--code-block-text)]"
           >
             {events.filter((e) => e.detail != null).map((e, i) => (
               <div key={i} className="flex items-start gap-1.5">
@@ -217,14 +217,14 @@ export default function BuildModal({ open, project, onClose, onComplete }: Build
                   e.status === 'ok' ? 'text-green-400' :
                   e.status === 'fail' ? 'text-rose-400' :
                   e.status === 'warn' ? 'text-amber-400' :
-                  'text-slate-400'
+                  'text-[var(--code-block-text)] opacity-80'
                 }>
                   {e.detail}
                 </span>
               </div>
             ))}
             {events.filter((e) => e.detail != null).length === 0 && (
-              <span className="text-slate-500">{t('build.waitingForOutput')}</span>
+              <span className="text-[var(--code-block-text)] opacity-60">{t('build.waitingForOutput')}</span>
             )}
           </div>
         </div>

@@ -77,7 +77,7 @@ export default function DataTable<T>({
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleAll}
-                  className="accent-blue-600 rounded-md"
+                  className="accent-[var(--primary)] rounded-md"
                 />
               </th>
             )}
@@ -100,8 +100,8 @@ export default function DataTable<T>({
               <tr
                 key={id}
                 className={`transition-colors ${
-                  onRowClick != null ? 'cursor-pointer hover:bg-white/35 dark:hover:bg-white/6' : ''
-                } ${isSelected ? 'bg-blue-500/10 dark:bg-blue-400/10' : ''}`}
+                  onRowClick != null ? 'cursor-pointer hover:bg-[var(--surface-hover)]' : ''
+                } ${isSelected ? 'bg-[var(--primary)]/10' : ''}`}
                 onClick={() => onRowClick?.(row)}
               >
                 {selectable === true && (
@@ -112,7 +112,7 @@ export default function DataTable<T>({
                       onChange={() => toggleRow(id)}
                       onClick={(e) => e.stopPropagation()}
                       disabled={!rowSelectable}
-                      className={`accent-blue-600 rounded-md${!rowSelectable ? ' opacity-30 cursor-not-allowed' : ''}`}
+                      className={`accent-[var(--primary)] rounded-md${!rowSelectable ? ' opacity-30 cursor-not-allowed' : ''}`}
                     />
                   </td>
                 )}

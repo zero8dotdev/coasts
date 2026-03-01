@@ -185,7 +185,7 @@ export default function InstanceDetailPage() {
                 onClick={() => void act(() => checkoutMut.mutateAsync({ project, name }))}
               />
             ) : isRunning && portsCount === 0 ? (
-              <span className="inline-flex items-center h-8 px-3 rounded text-[12px] font-medium bg-gray-500/15 text-gray-500 dark:text-gray-400">
+              <span className="inline-flex items-center h-8 px-3 rounded text-[12px] font-medium bg-[var(--surface-strong)] text-subtle-ui">
                 {t('instance.noPorts')}
               </span>
             ) : null}
@@ -207,7 +207,7 @@ export default function InstanceDetailPage() {
                 href={instance.primary_port_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-blue-500/12 border border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 transition-colors shrink-0"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-[var(--primary)]/12 border border-[var(--primary)]/30 text-[var(--primary-strong)] dark:text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors shrink-0"
               >
                 {instance.primary_port_service ?? 'web'}
                 <ArrowSquareOut size={11} />
@@ -269,7 +269,7 @@ export default function InstanceDetailPage() {
               <span className="text-subtle-ui">{t('col.build')}:</span>
               <Link
                 to={`/project/${project}/builds/${encodeURIComponent(instance.build_id)}`}
-                className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                className="font-mono text-xs text-[var(--primary)] hover:text-[var(--primary-strong)] hover:underline"
               >
                 {instance.build_id}
               </Link>

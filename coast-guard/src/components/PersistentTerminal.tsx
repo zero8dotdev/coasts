@@ -773,7 +773,7 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
     return () => window.removeEventListener('coast:agent-shell-changed', handler);
   }, [syncNewAgentSessions]);
 
-  const iconBtn = 'h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:text-main hover:bg-white/25 dark:hover:bg-white/10 transition-colors shrink-0';
+  const iconBtn = 'h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors shrink-0';
 
   return (
     <div
@@ -785,7 +785,7 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
       style={fullscreen ? terminalSurfaceStyle : { ['--term-bg' as const]: termBg } as CSSProperties}
     >
       {/* Tab bar */}
-      <div className="flex items-center h-10 min-h-[2.5rem] shrink-0 px-4 bg-white/20 dark:bg-white/6 border-b border-[var(--border)] overflow-hidden">
+      <div className="flex items-center h-10 min-h-[2.5rem] shrink-0 px-4 bg-[var(--surface-muted)] border-b border-[var(--border)] overflow-hidden">
         <div className="flex items-center overflow-x-auto flex-1 min-w-0 h-full">
           {sessions.map((s) => (
             <div
@@ -793,8 +793,8 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
               onClick={() => setActiveClientId(s.clientId)}
               className={`inline-flex items-center gap-1.5 h-7 px-3 text-xs font-semibold cursor-pointer select-none rounded-md transition-colors shrink-0 whitespace-nowrap ${
                 s.clientId === activeClientId
-                  ? 'bg-white/35 dark:bg-white/12 text-main'
-                  : 'text-subtle-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8'
+                  ? 'bg-[var(--surface-strong)] text-main'
+                  : 'text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)]'
               }`}
             >
               {s.isAgent && (
@@ -809,7 +809,7 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
                 <button
                   onClick={(e) => openAgentActionMenu(e, s.clientId)}
                   data-agent-action-caret={s.clientId}
-                  className="inline-flex items-center justify-center h-4 w-4 rounded text-subtle-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8 transition-colors"
+                  className="inline-flex items-center justify-center h-4 w-4 rounded text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
                   title={t('terminal.agentActions')}
                 >
                   <CaretDown size={10} />
@@ -886,13 +886,13 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
         >
           <button
             onClick={() => { void handleMakeActiveAgent(); }}
-            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8 transition-colors"
+            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           >
             {t('terminal.makeActiveAgent')}
           </button>
           <button
             onClick={() => { void handleCloseAgent(); }}
-            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8 transition-colors"
+            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           >
             {t('terminal.closeAgent')}
           </button>
@@ -907,13 +907,13 @@ export default function PersistentTerminal({ config }: Props): ReactElement {
         >
           <button
             onClick={handleSpawnShellTab}
-            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8 transition-colors"
+            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           >
             {t('terminal.newShell')}
           </button>
           <button
             onClick={() => { void handleSpawnAgentShellTab(); }}
-            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-white/15 dark:hover:bg-white/8 transition-colors"
+            className="w-full text-left px-3 py-2 text-sm text-muted-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           >
             {t('terminal.newAgentShell')}
           </button>

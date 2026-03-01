@@ -112,7 +112,7 @@ export default function MassArchiveModal({
         <div className="flex items-center justify-between pt-1">
           <button
             onClick={toggleAll}
-            className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-[var(--primary)] hover:text-[var(--primary-strong)] transition-colors"
             disabled={archiving}
           >
             {allSelected ? <CheckSquare size={14} weight="fill" /> : <Square size={14} />}
@@ -131,8 +131,8 @@ export default function MassArchiveModal({
                 key={p.name}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-blue-50/60 dark:bg-blue-900/20 border border-blue-200/60 dark:border-blue-700/40'
-                    : 'hover:bg-white/40 dark:hover:bg-white/5 border border-transparent'
+                    ? 'bg-[var(--primary)]/12 border border-[var(--primary)]/25'
+                    : 'hover:bg-[var(--surface-hover)] border border-transparent'
                 } ${archiving ? 'pointer-events-none opacity-60' : ''}`}
               >
                 <input
@@ -143,7 +143,7 @@ export default function MassArchiveModal({
                   className="sr-only"
                 />
                 {isSelected ? (
-                  <CheckSquare size={18} weight="fill" className="text-blue-600 dark:text-blue-400 shrink-0" />
+                  <CheckSquare size={18} weight="fill" className="text-[var(--primary)] shrink-0" />
                 ) : (
                   <Square size={18} className="text-subtle-ui shrink-0" />
                 )}

@@ -86,11 +86,11 @@ function TextFileModal({ filename, content, onClose }: { filename: string; conte
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl max-h-[80vh] mx-4 rounded-xl border border-[var(--border)] shadow-2xl flex flex-col bg-white dark:bg-zinc-900"
+        className="relative w-full max-w-3xl max-h-[80vh] mx-4 rounded-xl border border-[var(--border)] shadow-2xl flex flex-col bg-[var(--surface-solid)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)]">
@@ -124,12 +124,12 @@ function TextFileModal({ filename, content, onClose }: { filename: string; conte
 function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-zoom-out"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-strong)] backdrop-blur-sm cursor-zoom-out"
       onClick={onClose}
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
+        className="absolute top-4 right-4 p-2 rounded-lg bg-[var(--overlay)] text-[var(--code-block-text)] hover:bg-[var(--overlay-strong)] transition-colors"
       >
         <X size={20} />
       </button>
@@ -277,7 +277,7 @@ export default function DocsViewer({ content, basePath, files }: DocsViewerProps
             onClick={() => {
               if (typeof resolvedSrc === 'string') setLightboxImg({ src: resolvedSrc, alt: altText });
             }}
-            className="absolute top-2 right-2 p-1.5 rounded-md bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+            className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--overlay)] text-[var(--code-block-text)] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--overlay-strong)]"
             title="Expand image"
           >
             <ArrowsOut size={16} />

@@ -782,7 +782,7 @@ export default function InstanceFilesTab({ project, name }: Props) {
       <div className="flex items-center gap-2 px-3 py-1.5 border-b shrink-0"
         style={{ background: chromeStyle.toolbarBg, borderColor: chromeStyle.borderColor, color: chromeStyle.textColor }}>
         <button type="button" onClick={() => setSidebarOpen((v) => !v)}
-          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-white/10 transition-colors"
+          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           title={t('files.toggleSidebar')}>
           <SidebarSimple size={16} />
         </button>
@@ -804,17 +804,17 @@ export default function InstanceFilesTab({ project, name }: Props) {
           <FloppyDisk size={14} /> {saving ? t('files.saving') : t('files.save')}
         </button>
         <button type="button" onClick={() => { setShowFileSearch(true); setShowGrepPanel(false); }}
-          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-white/10 transition-colors" title="Ctrl+P">
+          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors" title="Ctrl+P">
           <MagnifyingGlass size={16} />
         </button>
         <button type="button" onClick={() => { setShowGrepPanel((v) => !v); setShowFileSearch(false); }}
-          className={`h-7 w-7 inline-flex items-center justify-center rounded transition-colors ${showGrepPanel ? 'text-[var(--primary)] bg-[var(--primary)]/10' : 'text-subtle-ui hover:text-main hover:bg-white/10'}`}
+          className={`h-7 w-7 inline-flex items-center justify-center rounded transition-colors ${showGrepPanel ? 'text-[var(--primary)] bg-[var(--primary)]/10' : 'text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)]'}`}
           title="Ctrl+Shift+F">
           <TextT size={16} />
         </button>
         <EditorThemePicker themes={editorThemes} activeId={activeTheme.id} onSelect={setEditorTheme} />
         <button type="button" onClick={() => setFullscreen((v) => !v)}
-          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-white/10 transition-colors"
+          className="h-7 w-7 inline-flex items-center justify-center rounded text-subtle-ui hover:text-main hover:bg-[var(--surface-hover)] transition-colors"
           title={fullscreen ? t('files.exitFullscreen') : t('files.fullscreen')}>
           {fullscreen ? <CornersIn size={16} /> : <CornersOut size={16} />}
         </button>
@@ -967,7 +967,7 @@ export default function InstanceFilesTab({ project, name }: Props) {
 
       {/* Ctrl+P Fuzzy File Search Modal — rendered via Portal for full-page coverage */}
       {showFileSearch && createPortal(
-        <div className="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm"
+        <div className="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh] bg-[var(--overlay-strong)] backdrop-blur-sm"
           onMouseDown={() => setShowFileSearch(false)}>
           <div className="w-[560px] max-w-[90vw] glass-panel shadow-2xl overflow-hidden"
             onMouseDown={(e) => e.stopPropagation()}>
@@ -1002,7 +1002,7 @@ export default function InstanceFilesTab({ project, name }: Props) {
               )}
               {fileSearchResults.map((r, i) => (
                 <button key={r.path} type="button"
-                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${i === selectedIdx ? 'bg-[var(--primary)]/15 text-main' : 'hover:bg-white/5'}`}
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${i === selectedIdx ? 'bg-[var(--primary)]/15 text-main' : 'hover:bg-[var(--surface-hover)]'}`}
                   onClick={() => { void openFileInTab(r.path); setShowFileSearch(false); }}
                   onMouseEnter={() => setSelectedIdx(i)}>
                   <span className="text-xs font-mono text-main truncate">{r.basename}</span>

@@ -15,42 +15,90 @@
   
   --spacing-shell: 2rem;
   
-  --shadow-glass: 
-    0 4px 30px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  --shadow-glass:
+    0 14px 32px rgba(15, 40, 78, 0.14),
+    0 2px 8px rgba(15, 40, 78, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  --shadow-modal:
+    0 26px 60px rgba(9, 28, 56, 0.22),
+    0 8px 20px rgba(9, 28, 56, 0.16);
     
   --shadow-glass-dark: 
     0 4px 30px rgba(0, 0, 0, 0.4),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  --shadow-modal-dark:
+    0 26px 60px rgba(2, 8, 23, 0.45),
+    0 8px 20px rgba(2, 8, 23, 0.28);
 }
 
 @layer base {
   :root,
   [data-theme="light"] {
-    --bg: #f2f5f9;
-    --bg-grad-start: #eef2f6;
-    --bg-grad-end: #dfe4ea;
+    --bg: #eaf3ff;
+    --bg-grad-start: #f2f7ff;
+    --bg-grad-end: #dbe9fb;
     
-    --surface: rgba(255, 255, 255, 0.65);
+    --surface: rgba(255, 255, 255, 0.9);
     --surface-solid: #ffffff;
-    --surface-muted: rgba(241, 245, 249, 0.6);
+    --surface-muted: rgba(236, 244, 255, 0.92);
+    --surface-strong: #dce9fb;
+    --surface-hover: rgba(19, 102, 182, 0.09);
+    --surface-muted-hover: rgba(219, 233, 251, 0.95);
     
-    --text: #1e293b;
-    --text-muted: #64748b;
-    --text-subtle: #94a3b8;
+    --text: #10233f;
+    --text-muted: #39526f;
+    --text-subtle: #4e6b8b;
     
-    --border: rgba(203, 213, 225, 0.4);
-    --border-strong: rgba(148, 163, 184, 0.4);
+    --border: rgba(123, 157, 198, 0.42);
+    --border-strong: rgba(84, 120, 164, 0.58);
     
-    --primary: #3b82f6;
-    --primary-strong: #2563eb;
+    --primary: #1387de;
+    --primary-strong: #0e6cbc;
     
     --danger: #ef4444;
     --danger-strong: #dc2626;
     
-    --focus-ring: rgba(59, 130, 246, 0.5);
+    --focus-ring: rgba(19, 135, 222, 0.45);
+
+    --overlay: rgba(8, 27, 56, 0.4);
+    --overlay-strong: rgba(5, 18, 41, 0.56);
+    --code-block-bg: #0f172a;
+    --code-block-text: #dbe7ff;
+
+    --chart-cpu: #3b82f6;
+    --chart-memory: #8b5cf6;
+    --chart-disk-read: #06b6d4;
+    --chart-disk-write: #f97316;
+    --chart-net-rx: #3b82f6;
+    --chart-net-tx: #f97316;
+
+    --ansi-red: #ef4444;
+    --ansi-green: #22c55e;
+    --ansi-yellow: #eab308;
+    --ansi-blue: #3b82f6;
+    --ansi-magenta: #a855f7;
+    --ansi-cyan: #06b6d4;
+    --ansi-bright-red: #f87171;
+    --ansi-bright-green: #4ade80;
+    --ansi-bright-yellow: #facc15;
+    --ansi-bright-blue: #60a5fa;
+    --ansi-bright-magenta: #c084fc;
+    --ansi-bright-cyan: #22d3ee;
+
+    --service-color-1: #3b82f6;
+    --service-color-2: #8b5cf6;
+    --service-color-3: #06b6d4;
+    --service-color-4: #f97316;
+    --service-color-5: #ec4899;
+    --service-color-6: #10b981;
+    --service-color-7: #f59e0b;
+    --service-color-8: #6366f1;
+    --service-color-9: #14b8a6;
+    --service-color-10: #e11d48;
   }
 
   [data-theme="dark"] {
@@ -61,6 +109,9 @@
     --surface: rgba(30, 41, 59, 0.4);
     --surface-solid: #1e293b;
     --surface-muted: rgba(15, 23, 42, 0.4);
+    --surface-strong: rgba(51, 65, 85, 0.68);
+    --surface-hover: rgba(255, 255, 255, 0.08);
+    --surface-muted-hover: rgba(30, 41, 59, 0.62);
     
     --text: #f8fafc;
     --text-muted: #cbd5e1;
@@ -76,6 +127,42 @@
     --danger-strong: #ef4444;
     
     --focus-ring: rgba(79, 124, 247, 0.45);
+
+    --overlay: rgba(2, 8, 23, 0.58);
+    --overlay-strong: rgba(2, 8, 23, 0.72);
+    --code-block-bg: rgba(15, 23, 42, 0.92);
+    --code-block-text: #dbe7ff;
+
+    --chart-cpu: #3b82f6;
+    --chart-memory: #8b5cf6;
+    --chart-disk-read: #06b6d4;
+    --chart-disk-write: #f97316;
+    --chart-net-rx: #3b82f6;
+    --chart-net-tx: #f97316;
+
+    --ansi-red: #ef4444;
+    --ansi-green: #22c55e;
+    --ansi-yellow: #eab308;
+    --ansi-blue: #3b82f6;
+    --ansi-magenta: #a855f7;
+    --ansi-cyan: #06b6d4;
+    --ansi-bright-red: #f87171;
+    --ansi-bright-green: #4ade80;
+    --ansi-bright-yellow: #facc15;
+    --ansi-bright-blue: #60a5fa;
+    --ansi-bright-magenta: #c084fc;
+    --ansi-bright-cyan: #22d3ee;
+
+    --service-color-1: #3b82f6;
+    --service-color-2: #8b5cf6;
+    --service-color-3: #06b6d4;
+    --service-color-4: #f97316;
+    --service-color-5: #ec4899;
+    --service-color-6: #10b981;
+    --service-color-7: #f59e0b;
+    --service-color-8: #6366f1;
+    --service-color-9: #14b8a6;
+    --service-color-10: #e11d48;
   }
 
   html, body, #root {
@@ -188,7 +275,7 @@
     text-transform: uppercase;
     font-weight: 700;
     color: var(--text-subtle);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-muted);
   }
 
   /* Buttons */

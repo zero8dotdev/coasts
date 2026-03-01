@@ -18,7 +18,7 @@ interface CreateCoastModalProps {
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 const inputClass =
-  'w-full h-9 px-3 text-sm rounded-md border border-slate-300 dark:border-[var(--border)] bg-white/70 dark:bg-transparent text-main outline-none focus:border-[var(--primary)] placeholder:text-slate-500 dark:placeholder:text-subtle-ui';
+  'w-full h-9 px-3 text-sm rounded-md border border-[var(--border)] bg-[var(--surface-solid)] dark:bg-transparent text-main outline-none focus:border-[var(--primary)] placeholder:text-subtle-ui';
 
 export default function CreateCoastModal({
   open, project, existingNames, builds = [], worktrees, occupiedWorktrees, onCreated, onClose,
@@ -165,7 +165,7 @@ export default function CreateCoastModal({
             <button
               disabled={creating}
               onClick={() => void handleForceCreate()}
-              className="btn bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+              className="btn bg-amber-600 hover:bg-amber-700 text-white border border-amber-500"
             >
               {t('create.removeDanglingAndCreate', 'Remove & Create')}
             </button>
@@ -203,7 +203,7 @@ export default function CreateCoastModal({
 
         {/* Optional Coastfile selection */}
         <div className="space-y-0.5">
-          <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-2 block">
+          <label className="text-xs font-semibold text-main mb-2 block">
             {t('build.type')}:
           </label>
           <div className="flex flex-wrap gap-1.5 pt-0.5 pb-1.5">
@@ -216,8 +216,8 @@ export default function CreateCoastModal({
                   disabled={creating}
                   className={`px-2.5 py-1 rounded-md text-[11px] font-mono border cursor-pointer transition-colors ${
                     selectedCoastfileType === type
-                      ? 'bg-emerald-600 border-emerald-500 text-white'
-                      : 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10'
+                      ? 'bg-[var(--primary)] border-[var(--primary-strong)] text-white'
+                      : 'bg-[var(--surface-muted)] border-[var(--border)] text-main hover:bg-[var(--surface-strong)]'
                   }`}
                 >
                   {type}
@@ -235,10 +235,10 @@ export default function CreateCoastModal({
         </div>
 
         {/* Divider */}
-        <div className="-mt-2 flex items-center gap-3 text-xs text-slate-500 dark:text-subtle-ui">
-          <div className="flex-1 border-t border-slate-300 dark:border-[var(--border)]" />
+        <div className="-mt-2 flex items-center gap-3 text-xs text-subtle-ui">
+          <div className="flex-1 border-t border-[var(--border)]" />
           <span>{t('create.worktreeLabel')}</span>
-          <div className="flex-1 border-t border-slate-300 dark:border-[var(--border)]" />
+          <div className="flex-1 border-t border-[var(--border)]" />
         </div>
 
         {/* Worktree picker */}
@@ -254,9 +254,9 @@ export default function CreateCoastModal({
                 disabled={creating}
               />
             )}
-            <div className="max-h-40 overflow-y-auto rounded-md border border-slate-300 dark:border-[var(--border)] bg-white/60 dark:bg-transparent py-1">
+            <div className="max-h-40 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-muted)] dark:bg-transparent py-1">
               {availableWorktrees.length === 0 ? (
-                <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-subtle-ui">
+                <div className="px-3 py-4 text-center text-xs text-subtle-ui">
                   {t('assign.noWorktrees')}
                 </div>
               ) : (
@@ -267,10 +267,10 @@ export default function CreateCoastModal({
                     disabled={occupied || creating}
                     className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors ${
                       occupied
-                        ? 'text-slate-400 dark:text-subtle-ui cursor-not-allowed opacity-50'
+                        ? 'text-subtle-ui cursor-not-allowed opacity-50'
                         : selectedWorktree === name
                           ? 'bg-[var(--primary)]/15 text-[var(--primary)]'
-                          : 'text-main hover:bg-slate-200/60 dark:hover:bg-white/5'
+                          : 'text-main hover:bg-[var(--surface-hover)]'
                     }`}
                     onClick={() => {
                       setSelectedWorktree(selectedWorktree === name ? null : name);
@@ -279,7 +279,7 @@ export default function CreateCoastModal({
                   >
                     <span>{name}</span>
                     {occupied && (
-                      <span className="ml-2 text-[10px] text-slate-500 dark:text-subtle-ui">
+                      <span className="ml-2 text-[10px] text-subtle-ui">
                         {t('assign.branchOccupied')}
                       </span>
                     )}
@@ -293,7 +293,7 @@ export default function CreateCoastModal({
         {/* Custom worktree input */}
         <div>
           {!hasExistingWorktrees && (
-            <p className="mb-2 text-xs text-slate-500 dark:text-subtle-ui">{t('assign.noWorktrees')}</p>
+            <p className="mb-2 text-xs text-subtle-ui">{t('assign.noWorktrees')}</p>
           )}
           <input
             type="text"

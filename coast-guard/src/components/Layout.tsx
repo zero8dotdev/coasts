@@ -35,7 +35,7 @@ export default function Layout() {
             {dockerInfo != null && dockerInfo.connected && (
               <button
                 onClick={handleOpenDockerSettings}
-                className="h-8 px-2.5 inline-flex items-center gap-2.5 rounded-lg text-xs text-subtle-ui hover:bg-white/30 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                className="h-8 px-2.5 inline-flex items-center gap-2.5 rounded-lg text-xs text-subtle-ui hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
                 title={t('docker.memoryTitle')}
               >
                 <DockerIcon size={18} />
@@ -56,14 +56,14 @@ export default function Layout() {
             <LanguagePicker />
             <button
               onClick={toggle}
-              className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:bg-white/30 dark:hover:bg-white/10 transition-colors"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:bg-[var(--surface-hover)] transition-colors"
               title={theme === 'dark' ? t('theme.switchToLight') : t('theme.switchToDark')}
             >
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <Link
               to="/docs"
-              className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:bg-white/30 dark:hover:bg-white/10 transition-colors"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-subtle-ui hover:bg-[var(--surface-hover)] transition-colors"
               title={t('docs.title')}
             >
               <BookOpenText size={18} />

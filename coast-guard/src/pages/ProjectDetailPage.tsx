@@ -182,7 +182,7 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-semibold truncate">{r.name}</span>
             {r.checked_out ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-300">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--primary)]">
                 <ArrowRight size={12} />
                 {t('instance.checkedOut')}
               </span>
@@ -201,7 +201,7 @@ export default function ProjectDetailPage() {
                   {t('action.checkout')}
                 </button>
               ) : (
-                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/15 text-gray-500 dark:text-gray-400">
+                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--surface-strong)] text-subtle-ui">
                   {t('instance.noPorts')}
                 </span>
               )
@@ -262,7 +262,7 @@ export default function ProjectDetailPage() {
                 <span className={pending.type === 'unassign' ? 'text-subtle-ui' : 'text-fuchsia-600 dark:text-fuchsia-300'}>
                   {pending.targetWorktree}
                 </span>
-                <DotLoader className={pending.type === 'unassign' ? 'text-slate-400 dark:text-slate-500' : 'text-fuchsia-500'} />
+                <DotLoader className={pending.type === 'unassign' ? 'text-subtle-ui' : 'text-fuchsia-500'} />
               </div>
             );
           }
@@ -270,7 +270,7 @@ export default function ProjectDetailPage() {
             return (
               <div className="flex items-center gap-1.5 font-mono text-xs">
                 <span className="text-subtle-ui">{r.branch ?? '\u2014'}</span>
-                <DotLoader className={r.status === 'assigning' ? 'text-fuchsia-500' : 'text-slate-400 dark:text-slate-500'} />
+                <DotLoader className={r.status === 'assigning' ? 'text-fuchsia-500' : 'text-subtle-ui'} />
               </div>
             );
           }
@@ -293,7 +293,7 @@ export default function ProjectDetailPage() {
                 <span className={pending.type === 'unassign' ? 'text-subtle-ui' : 'text-fuchsia-600 dark:text-fuchsia-300'}>
                   {pending.targetWorktree}
                 </span>
-                <DotLoader className={pending.type === 'unassign' ? 'text-slate-400 dark:text-slate-500' : 'text-fuchsia-500'} />
+                <DotLoader className={pending.type === 'unassign' ? 'text-subtle-ui' : 'text-fuchsia-500'} />
               </div>
             );
           }
@@ -302,7 +302,7 @@ export default function ProjectDetailPage() {
             return (
               <div className="flex items-center gap-1.5 font-mono text-xs">
                 {r.worktree != null && <span className="text-subtle-ui">{r.worktree}</span>}
-                <DotLoader className={r.status === 'assigning' ? 'text-fuchsia-500' : 'text-slate-400 dark:text-slate-500'} />
+                <DotLoader className={r.status === 'assigning' ? 'text-fuchsia-500' : 'text-subtle-ui'} />
               </div>
             );
           }
@@ -357,7 +357,7 @@ export default function ProjectDetailPage() {
           return (
             <Link
               to={`/project/${project}/builds/${encodeURIComponent(bid)}`}
-              className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              className="font-mono text-xs text-[var(--primary)] hover:text-[var(--primary-strong)] hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               {bid}
@@ -495,7 +495,7 @@ export default function ProjectDetailPage() {
                     const groupIds = group.map((i) => i.name as string);
                     return (
                       <div key={type} className="rounded-lg border border-[var(--border)] overflow-hidden">
-                        <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-subtle-ui bg-slate-50/70 dark:bg-white/5">
+                        <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-subtle-ui bg-[var(--surface-muted)]">
                           {t('build.type')}: <span className="font-mono normal-case">{type}</span>
                         </div>
                         <DataTable

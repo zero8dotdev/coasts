@@ -105,7 +105,7 @@ export default function BuildTabContent({
             <>
               <span className="text-subtle-ui">{t('build.coastImage')}</span>
               <span
-                className="font-mono text-xs cursor-pointer text-blue-600 dark:text-blue-400 hover:underline transition-colors"
+                className="font-mono text-xs cursor-pointer text-[var(--primary)] hover:text-[var(--primary-strong)] hover:underline transition-colors"
                 onClick={() => navigate(`/project/${project}/host-images/${encodeURIComponent(inspect.coast_image!)}`)}
               >
                 {inspect.coast_image}
@@ -138,13 +138,13 @@ export default function BuildTabContent({
                 {inspect.instances.map((inst) => (
                   <tr
                     key={String(inst.name)}
-                    className="transition-colors cursor-pointer hover:bg-white/35 dark:hover:bg-white/6"
+                    className="transition-colors cursor-pointer hover:bg-[var(--surface-hover)]"
                     onClick={() => navigate(`/instance/${project}/${encodeURIComponent(String(inst.name))}`)}
                   >
                     <td className="px-5 py-2.5">
                       <Link
                         to={`/instance/${project}/${encodeURIComponent(String(inst.name))}`}
-                        className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                        className="text-[var(--primary)] hover:text-[var(--primary-strong)] hover:underline font-medium"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {String(inst.name)}
@@ -181,10 +181,10 @@ export default function BuildTabContent({
                 {dockerImages.map((img) => (
                   <tr
                     key={`${img.repository}:${img.tag}`}
-                    className="transition-colors cursor-pointer hover:bg-white/35 dark:hover:bg-white/6"
+                    className="transition-colors cursor-pointer hover:bg-[var(--surface-hover)]"
                     onClick={() => navigate(`/project/${project}/host-images/${encodeURIComponent(`${img.repository}:${img.tag}`)}`)}
                   >
-                    <td className="px-5 py-2.5 font-mono text-xs text-blue-600 dark:text-blue-400">{img.repository}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-[var(--primary)]">{img.repository}</td>
                     <td className="px-4 py-2.5">{img.tag}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-subtle-ui">{img.id}</td>
                     <td className="px-4 py-2.5 text-subtle-ui">{img.created ? relativeTime(img.created, t) : '—'}</td>
@@ -203,7 +203,7 @@ export default function BuildTabContent({
         <div className="glass-panel overflow-hidden">
           <button
             type="button"
-            className="w-full flex items-center justify-between px-5 py-3 text-sm font-semibold text-main hover:bg-white/20 dark:hover:bg-white/5 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-3 text-sm font-semibold text-main hover:bg-[var(--surface-hover)] transition-colors"
             onClick={() => setShowTarballs(!showTarballs)}
           >
             <span>{t('build.cachedTarballs')} ({cachedImages.length}, {formatBytes(cachedTotalBytes)})</span>
@@ -226,9 +226,9 @@ export default function BuildTabContent({
                       <td className="px-5 py-2.5">
                         <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                           img.image_type === 'built'
-                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                            ? 'bg-[var(--primary)]/15 text-[var(--primary-strong)] dark:text-[var(--primary)]'
                             : img.image_type === 'base'
-                              ? 'bg-slate-500/15 text-slate-600 dark:text-slate-400'
+                              ? 'bg-[var(--surface-strong)] text-muted-ui'
                               : 'bg-green-500/15 text-green-700 dark:text-green-300'
                         }`}>
                           {img.image_type}
@@ -276,7 +276,7 @@ export default function BuildTabContent({
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono ${
                   v.strategy === 'shared'
                     ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300'
-                    : 'bg-slate-500/15 text-slate-600 dark:text-slate-400'
+                    : 'bg-[var(--surface-strong)] text-muted-ui'
                 }`}
               >
                 {v.name}
@@ -313,7 +313,7 @@ export default function BuildTabContent({
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono ${
                       m.proxy
                         ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300'
-                        : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                        : 'bg-[var(--primary)]/15 text-[var(--primary-strong)] dark:text-[var(--primary)]'
                     }`}
                   >
                     {m.name}

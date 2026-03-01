@@ -131,14 +131,14 @@ export default function BuildsListPanel({ project, builds, t, navigate }: Builds
         headerClassName: 'w-auto',
         render: (b) => (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-blue-600 dark:text-blue-400">{b.build_id ?? '—'}</span>
+            <span className="font-mono text-xs text-[var(--primary)]">{b.build_id ?? '—'}</span>
             {b.is_latest && (
               <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/15 text-green-700 dark:text-green-300">
                 {t('build.latest')}
               </span>
             )}
             {(b.instances_using ?? 0) > 0 && (
-              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-300">
+              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--primary)]/15 text-[var(--primary-strong)] dark:text-[var(--primary)]">
                 {t('build.inUse', { count: b.instances_using ?? 0 })}
               </span>
             )}
@@ -233,7 +233,7 @@ export default function BuildsListPanel({ project, builds, t, navigate }: Builds
                 const groupIds = group.rows.map((b) => b.build_id ?? 'legacy');
                 return (
                   <div key={group.type} className="rounded-lg border border-[var(--border)] overflow-hidden">
-                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-subtle-ui bg-slate-50/70 dark:bg-white/5">
+                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-subtle-ui bg-[var(--surface-muted)]">
                       {t('build.type')}: <span className="font-mono normal-case">{group.type}</span>
                     </div>
                     <DataTable

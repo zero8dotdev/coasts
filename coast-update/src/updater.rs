@@ -144,6 +144,15 @@ pub fn apply_update(tarball_path: &Path) -> Result<(), UpdateError> {
     Ok(())
 }
 
+/// Append a sudo hint if the error is a permission denial.
+fn permission_hint(msg: String, err: &std::io::Error) -> String {
+    if err.kind() == std::io::ErrorKind::PermissionDenied {
+        format!("{msg}\nTry again with sudo: sudo coast update apply")
+    } else {
+        msg
+    }
+}
+
 /// Replace a single binary atomically using rename.
 fn replace_binary(new_path: &Path, target_path: &Path) -> Result<(), UpdateError> {
     let backup = target_path.with_extension("old");
@@ -151,7 +160,10 @@ fn replace_binary(new_path: &Path, target_path: &Path) -> Result<(), UpdateError
     // Move current binary out of the way
     if target_path.exists() {
         std::fs::rename(target_path, &backup).map_err(|e| {
-            UpdateError::ApplyFailed(format!("Failed to backup {}: {e}", target_path.display()))
+            UpdateError::ApplyFailed(permission_hint(format!(
+                "Failed to backup {}: {e}",
+                target_path.display()
+            ), &e))
         })?;
     }
 
@@ -161,10 +173,10 @@ fn replace_binary(new_path: &Path, target_path: &Path) -> Result<(), UpdateError
         if backup.exists() {
             let _ = std::fs::rename(&backup, target_path);
         }
-        return Err(UpdateError::ApplyFailed(format!(
+        return Err(UpdateError::ApplyFailed(permission_hint(format!(
             "Failed to install new binary at {}: {e}",
             target_path.display()
-        )));
+        ), &e)));
     }
 
     // Make executable

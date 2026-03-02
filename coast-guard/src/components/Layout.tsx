@@ -55,7 +55,6 @@ export default function Layout() {
                 <span className="font-medium">{t('docker.notRunning')}</span>
               </span>
             )}
-            <UpdateButton />
             <LanguagePicker />
             <button
               onClick={toggle}
@@ -77,6 +76,7 @@ export default function Layout() {
       <main className="flex-1">
         <Outlet />
       </main>
+      <UpdateButton />
     </div>
   );
 }

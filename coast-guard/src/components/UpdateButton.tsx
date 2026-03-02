@@ -6,19 +6,22 @@ import { api } from '../api/endpoints';
 
 type UpdatePhase = 'idle' | 'confirm' | 'downloading' | 'installing' | 'restarting' | 'reconnecting' | 'success' | 'error';
 
+const BASE = 'fixed bottom-4 left-4 z-50';
+const PILL = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition-colors';
+
 export default function UpdateButton() {
   const { t } = useTranslation();
   const { data: updateInfo } = useUpdateCheck();
   const applyUpdate = useApplyUpdateMutation();
   const [phase, setPhase] = useState<UpdatePhase>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Close popover on outside click
   useEffect(() => {
     if (phase !== 'confirm') return;
     function handleClick(e: MouseEvent) {
-      if (dropdownRef.current != null && !dropdownRef.current.contains(e.target as Node)) {
+      if (popoverRef.current != null && !popoverRef.current.contains(e.target as Node)) {
         setPhase('idle');
       }
     }
@@ -68,26 +71,30 @@ export default function UpdateButton() {
   const latestVersion = updateInfo.latest_version ?? currentVersion;
   const isUpdating = phase === 'downloading' || phase === 'installing' || phase === 'restarting' || phase === 'reconnecting';
 
-  // Success toast
+  // Success
   if (phase === 'success') {
     return (
-      <span className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs text-green-600 dark:text-green-400">
-        <CheckCircle size={16} weight="bold" />
-        <span className="font-medium">{t('update.success', { version: latestVersion })}</span>
-      </span>
+      <div className={BASE}>
+        <span className={`${PILL} bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400`}>
+          <CheckCircle size={14} weight="bold" />
+          {t('update.success', { version: latestVersion })}
+        </span>
+      </div>
     );
   }
 
-  // Error state
+  // Error
   if (phase === 'error') {
     return (
-      <button
-        onClick={() => setPhase('idle')}
-        className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs text-red-500 dark:text-red-400 hover:bg-[var(--header-control-hover)] transition-colors cursor-pointer"
-        title={errorMsg}
-      >
-        <span className="font-medium">{t('update.error', { error: errorMsg })}</span>
-      </button>
+      <div className={BASE}>
+        <button
+          onClick={() => setPhase('idle')}
+          className={`${PILL} bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 cursor-pointer`}
+          title={errorMsg}
+        >
+          {t('update.error', { error: errorMsg })}
+        </button>
+      </div>
     );
   }
 
@@ -100,39 +107,43 @@ export default function UpdateButton() {
       t('update.reconnecting');
 
     return (
-      <span className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs text-subtle-ui">
-        <ArrowsClockwise size={16} className="animate-spin" />
-        <span className="font-medium">{label}</span>
-      </span>
+      <div className={BASE}>
+        <span className={`${PILL} bg-[var(--surface-muted)] text-[var(--text-muted)]`}>
+          <ArrowsClockwise size={14} className="animate-spin" />
+          {label}
+        </span>
+      </div>
     );
   }
 
-  // No update available — show quiet version
+  // No update — quiet version label
   if (!updateInfo.update_available) {
     return (
-      <span
-        className="h-8 px-2.5 inline-flex items-center rounded-lg text-xs text-subtle-ui"
-        title={`coast ${currentVersion}`}
-      >
-        <span className="font-medium">v{currentVersion}</span>
-      </span>
+      <div className={BASE}>
+        <span
+          className={`${PILL} bg-[var(--surface-muted)] text-[var(--text-muted)]`}
+          title={`coast ${currentVersion}`}
+        >
+          v{currentVersion}
+        </span>
+      </div>
     );
   }
 
-  // Update available — button with confirmation dropdown
+  // Update available — pill with popover
   return (
-    <div ref={dropdownRef} className="relative">
+    <div ref={popoverRef} className={BASE}>
       <button
         onClick={() => setPhase(phase === 'confirm' ? 'idle' : 'confirm')}
-        className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs text-amber-600 dark:text-amber-400 hover:bg-[var(--header-control-hover)] transition-colors cursor-pointer"
+        className={`${PILL} bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer`}
         title={`${currentVersion} → ${latestVersion}`}
       >
-        <Download size={16} weight="bold" />
-        <span className="font-medium">{t('update.available', { version: latestVersion })}</span>
+        <Download size={14} weight="bold" />
+        Update available
       </button>
 
       {phase === 'confirm' && (
-        <div className="absolute right-0 top-full mt-2 glass-panel p-3 min-w-[240px] z-50">
+        <div className="absolute left-0 bottom-full mb-2 glass-panel p-3 min-w-[240px] z-50 rounded-lg shadow-lg">
           <p className="text-sm text-main mb-3">
             {t('update.confirmTitle', { version: latestVersion })}
           </p>

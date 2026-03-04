@@ -40,6 +40,7 @@ import type {
   ServiceInspectResponse,
   ServiceControlRequest,
   SuccessResponse,
+  PortHealthStatus,
   SharedResponse,
   SharedAllResponse,
   BuildSummary,
@@ -263,6 +264,22 @@ export const api = {
 
   serviceRestart(project: string, name: string, service: string): Promise<SuccessResponse> {
     return post<ServiceControlRequest, SuccessResponse>('/service/restart', { project, name, service });
+  },
+
+  bareServiceStop(project: string, name: string, service: string): Promise<SuccessResponse> {
+    return post<ServiceControlRequest, SuccessResponse>('/bare-service/stop', { project, name, service });
+  },
+
+  bareServiceStart(project: string, name: string, service: string): Promise<SuccessResponse> {
+    return post<ServiceControlRequest, SuccessResponse>('/bare-service/start', { project, name, service });
+  },
+
+  bareServiceRestart(project: string, name: string, service: string): Promise<SuccessResponse> {
+    return post<ServiceControlRequest, SuccessResponse>('/bare-service/restart', { project, name, service });
+  },
+
+  portHealth(project: string, name: string): Promise<{ ports: PortHealthStatus[] }> {
+    return post<{ project: string; name: string }, { ports: PortHealthStatus[] }>('/port-health', { project, name });
   },
 
   serviceRm(project: string, name: string, service: string): Promise<SuccessResponse> {

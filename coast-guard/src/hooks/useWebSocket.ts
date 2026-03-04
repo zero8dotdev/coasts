@@ -116,6 +116,12 @@ export function useCoastEvents(): void {
             }
           }
 
+          if (evt.event === 'port.health_changed') {
+            if ('project' in evt) {
+              void qc.invalidateQueries({ queryKey: ['portHealth'] });
+            }
+          }
+
           if (GIT_EVENTS.has(evt.event)) {
             void qc.invalidateQueries({ queryKey: ['projectGit'] });
           }

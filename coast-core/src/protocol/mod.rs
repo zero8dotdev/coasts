@@ -160,6 +160,8 @@ pub enum Response {
     Shared(SharedResponse),
     /// Worktree assignment completed.
     Assign(AssignResponse),
+    /// Explain-only analysis of what an assign would do.
+    AssignExplain(AssignExplainResponse),
     /// Streaming unassign progress event (sent before the final Unassign response).
     UnassignProgress(BuildProgressEvent),
     /// Unassign completed (instance returned to default branch).

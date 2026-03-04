@@ -590,6 +590,7 @@ mod tests {
                 name: String::new(),
                 worktree: String::new(),
                 commit_sha: None,
+                explain: false,
             }),
             Request::Unassign(UnassignRequest {
                 project: String::new(),

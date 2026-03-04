@@ -54,6 +54,7 @@ export type {
   McpToolsResponse,
   PortMapping,
   PortsResponse,
+  PortHealthStatus,
   ProjectGitResponse,
   ProjectSharedSummary,
   PsResponse,

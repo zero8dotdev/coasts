@@ -317,6 +317,107 @@ async fn service_health_cache_loop(state: Arc<server::AppState>) {
     }
 }
 
+/// Load healthcheck paths from the build artifact coastfile for a project.
+fn load_healthcheck_paths(project: &str) -> std::collections::HashMap<String, String> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let cf_path = home
+        .join(".coast")
+        .join("images")
+        .join(project)
+        .join("latest")
+        .join("coastfile.toml");
+    coast_core::coastfile::Coastfile::from_file(&cf_path)
+        .map(|cf| cf.healthcheck)
+        .unwrap_or_default()
+}
+
+/// Background loop that probes each port's dynamic_port every 5 seconds.
+/// Uses HTTP GET for ports with a `[healthcheck]` path configured, falls back
+/// to TCP connect for ports without one. Any HTTP response = healthy.
+async fn port_health_cache_loop(state: Arc<server::AppState>) {
+    use coast_core::types::PortHealthStatus;
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .redirect(reqwest::redirect::Policy::none())
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default();
+
+    loop {
+        let running: Vec<(String, String)> = {
+            let db = state.db.lock().await;
+            db.list_instances()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|i| {
+                    matches!(
+                        i.status,
+                        coast_core::types::InstanceStatus::Running
+                            | coast_core::types::InstanceStatus::CheckedOut
+                            | coast_core::types::InstanceStatus::Idle
+                    )
+                })
+                .map(|i| (i.project, i.name))
+                .collect()
+        };
+        for (project, name) in &running {
+            let healthcheck_paths = load_healthcheck_paths(project);
+            let allocs = {
+                let db = state.db.lock().await;
+                db.get_port_allocations(project, name).unwrap_or_default()
+            };
+            let key = format!("{project}:{name}");
+            let mut statuses: Vec<PortHealthStatus> = Vec::new();
+            for alloc in &allocs {
+                let port = alloc.dynamic_port;
+                let mapping: coast_core::types::PortMapping = alloc.into();
+
+                let healthy = if let Some(path) = healthcheck_paths.get(&mapping.logical_name) {
+                    let url = format!("http://127.0.0.1:{}{}", port, path);
+                    http_client.get(&url).send().await.is_ok()
+                } else {
+                    tokio::time::timeout(
+                        std::time::Duration::from_millis(500),
+                        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+                    )
+                    .await
+                    .map(|r| r.is_ok())
+                    .unwrap_or(false)
+                };
+
+                statuses.push(PortHealthStatus {
+                    logical_name: mapping.logical_name,
+                    canonical_port: mapping.canonical_port,
+                    dynamic_port: mapping.dynamic_port,
+                    is_primary: mapping.is_primary,
+                    healthy,
+                });
+            }
+            let changed = {
+                let cache = state.port_health_cache.lock().await;
+                match cache.get(&key) {
+                    Some(prev) => {
+                        prev.len() != statuses.len()
+                            || prev
+                                .iter()
+                                .zip(statuses.iter())
+                                .any(|(a, b)| a.healthy != b.healthy)
+                    }
+                    None => true,
+                }
+            };
+            state.port_health_cache.lock().await.insert(key, statuses);
+            if changed {
+                state.emit_event(coast_core::protocol::CoastEvent::PortHealthChanged {
+                    name: name.clone(),
+                    project: project.clone(),
+                });
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
 /// Restore socat port forwarding for all running instances after daemon restart.
 async fn restore_socat_forwarding(
     state: &Arc<server::AppState>,
@@ -598,6 +699,7 @@ async fn restore_running_state(state: &Arc<server::AppState>) {
 
     tokio::spawn(shared_services_cache_loop(Arc::clone(state)));
     tokio::spawn(service_health_cache_loop(Arc::clone(state)));
+    tokio::spawn(port_health_cache_loop(Arc::clone(state)));
 
     // Event bus listener for stats collector lifecycle.
     {

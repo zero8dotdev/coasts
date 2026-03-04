@@ -4,10 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { PencilSimple, Star, Globe } from '@phosphor-icons/react';
 import type { ProjectName, InstanceName } from '../types/branded';
 import type { PortMapping } from '../types/api';
-import { usePorts } from '../api/hooks';
+import { usePorts, usePortHealth } from '../api/hooks';
 import { api } from '../api/endpoints';
 import DataTable, { type Column } from '../components/DataTable';
 import Modal from '../components/Modal';
+import HealthDot from '../components/HealthDot';
 
 interface Props {
   readonly project: ProjectName;
@@ -43,6 +44,7 @@ export default function InstancePortsTab({ project, name, checkedOut }: Props) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const { data, isLoading, error, refetch } = usePorts(project, name);
+  const { data: healthData } = usePortHealth(project as string, name as string);
   const [templates, setTemplates] = useState<Record<string, string>>({});
   const [editingService, setEditingService] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -143,6 +145,7 @@ export default function InstancePortsTab({ project, name, checkedOut }: Props) {
             >
               <Star size={12} weight={r.is_primary ? 'fill' : 'regular'} />
             </button>
+            <HealthDot healthy={healthData?.ports?.find((p) => p.logical_name === r.logical_name)?.healthy} />
             <span className="font-medium">{r.logical_name}</span>
             <button
               type="button"

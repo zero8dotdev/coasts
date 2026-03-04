@@ -14,6 +14,7 @@ import VolumeDetailPage from './pages/VolumeDetailPage';
 import HostServiceDetailPage from './pages/HostServiceDetailPage';
 import HostImageDetailPage from './pages/HostImageDetailPage';
 import BuildDetailPage from './pages/BuildDetailPage';
+import BareServiceDetailPage from './pages/BareServiceDetailPage';
 import DocsPage from './pages/DocsPage';
 
 const queryClient = new QueryClient({
@@ -39,6 +40,7 @@ const router = createHashRouter([
       { path: 'project/:project', element: <ProjectDetailPage /> },
       { path: 'instance/:project/:name/services/:service/:tab', element: <ServiceDetailPage /> },
       { path: 'instance/:project/:name/services/:service', element: <ServiceDetailPage /> },
+      { path: 'instance/:project/:name/bare-services/:service', element: <BareServiceDetailPage /> },
       { path: 'instance/:project/:name/images/:imageId', element: <ImageDetailPage /> },
       { path: 'instance/:project/:name/volumes/:volumeName', element: <VolumeDetailPage /> },
       { path: 'instance/:project/:name/:tab', element: <InstanceDetailPage /> },

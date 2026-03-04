@@ -27,6 +27,7 @@ import StatusBadge from '../components/StatusBadge';
 import PersistentTerminal from '../components/PersistentTerminal';
 import SharedServicesPanel from '../components/SharedServicesPanel';
 import Modal from '../components/Modal';
+import PrimaryPortHealthDot from '../components/PrimaryPortHealthDot';
 import { ApiError } from '../api/client';
 import { ArrowRight, ArrowSquareOut, SpinnerGap, Warning } from '@phosphor-icons/react';
 import { useRemovingProjects } from '../providers/RemovingProjectsProvider';
@@ -214,6 +215,7 @@ export default function ProjectDetailPage() {
                 onClick={(e) => e.stopPropagation()}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-[var(--primary)]/30 bg-[var(--primary)]/10 text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors shrink-0"
               >
+                <PrimaryPortHealthDot project={project} name={r.name} service={r.primary_port_service} size={6} />
                 {r.primary_port_service}
                 <ArrowSquareOut size={11} />
               </a>

@@ -9,6 +9,7 @@ use coast_docker::runtime::Runtime;
 
 pub const SUPERVISOR_DIR: &str = "/coast-supervisor";
 pub const LOG_DIR: &str = "/var/log/coast-services";
+pub const CACHE_DIR: &str = "/coast-cache";
 
 /// Check if a container has the supervisor directory, indicating it uses bare services.
 pub async fn has_bare_services(docker: &bollard::Docker, container_id: &str) -> bool {
@@ -101,9 +102,26 @@ done"#
         ),
     };
 
+    let port_guard = if let Some(port) = svc.port {
+        format!(
+            "# Kill anything holding our port before starting\n\
+             fuser -k {port}/tcp 2>/dev/null; sleep 0.2\n"
+        )
+    } else {
+        String::new()
+    };
+
     format!(
         "#!/bin/sh\n\
          # coast-supervisor wrapper for service '{name}'\n\
+         # Guard: exit if another wrapper is already running this service\n\
+         if [ -f {pid_file} ]; then\n\
+         \x20 OLD_PID=$(cat {pid_file} 2>/dev/null)\n\
+         \x20 if [ -n \"$OLD_PID\" ] && kill -0 \"$OLD_PID\" 2>/dev/null; then\n\
+         \x20   exit 0\n\
+         \x20 fi\n\
+         fi\n\
+         {port_guard}\
          {restart_loop}\n"
     )
 }
@@ -136,6 +154,9 @@ fn stop_all_script(services: &[BareServiceConfig]) -> String {
             "if [ -f {SUPERVISOR_DIR}/{name}.pid ]; then\n\
              \x20 PID=$(cat {SUPERVISOR_DIR}/{name}.pid 2>/dev/null)\n\
              \x20 if [ -n \"$PID\" ] && kill -0 \"$PID\" 2>/dev/null; then\n\
+             \x20   for CHILD in $(ps -o pid= --ppid \"$PID\" 2>/dev/null || true); do\n\
+             \x20     kill \"$CHILD\" 2>/dev/null\n\
+             \x20   done\n\
              \x20   kill \"$PID\" 2>/dev/null\n\
              \x20   echo \"[coast-supervisor] stopped {name} (PID $PID)\"\n\
              \x20 fi\n\
@@ -144,7 +165,7 @@ fn stop_all_script(services: &[BareServiceConfig]) -> String {
             name = svc.name
         ));
     }
-    // Also kill any remaining wrapper shells
+    // Also kill any remaining wrapper shells and orphaned node processes
     script.push_str("pkill -f 'coast-supervisor wrapper' 2>/dev/null || true\n");
     script.push_str("echo \"[coast-supervisor] all services stopped\"\n");
     script
@@ -218,17 +239,72 @@ pub fn generate_setup_and_start_command(services: &[BareServiceConfig]) -> Strin
     parts.join(" && ")
 }
 
+/// Save cached directories from /workspace to the persistent cache.
+/// Uses cp -al (hardlinks) for near-instant copies without data duplication.
+pub fn generate_cache_save_command(services: &[BareServiceConfig]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for svc in services {
+        for dir in &svc.cache {
+            let cache_dest = format!("{CACHE_DIR}/{}/{dir}", svc.name);
+            parts.push(format!(
+                "if [ -d '/workspace/{dir}' ]; then \
+                   rm -rf '{cache_dest}' && \
+                   mkdir -p '$(dirname \"{cache_dest}\")' && \
+                   cp -al '/workspace/{dir}' '{cache_dest}' 2>/dev/null || \
+                   cp -a '/workspace/{dir}' '{cache_dest}'; \
+                 fi"
+            ));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
+}
+
+/// Restore cached directories into /workspace via hardlink copy.
+/// Each worktree gets its own independent copy (hardlinks share data on disk
+/// but allow independent modifications like Vite's .vite/deps rebuild).
+pub fn generate_cache_restore_command(services: &[BareServiceConfig]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for svc in services {
+        for dir in &svc.cache {
+            let cache_src = format!("{CACHE_DIR}/{}/{dir}", svc.name);
+            parts.push(format!(
+                "if [ -d '{cache_src}' ] && [ ! -e '/workspace/{dir}' ]; then \
+                   mkdir -p '$(dirname \"/workspace/{dir}\")' && \
+                   cp -al '{cache_src}' '/workspace/{dir}' 2>/dev/null || \
+                   cp -a '{cache_src}' '/workspace/{dir}'; \
+                   rm -rf '/workspace/{dir}/.vite' 2>/dev/null; \
+                 fi"
+            ));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("mkdir -p {CACHE_DIR}; {}", parts.join("; ")))
+    }
+}
+
 /// Build the install-then-start command (for assign/branch-switch).
 ///
-/// Runs install steps then starts services. Skips install for services
-/// with no install steps.
+/// Restores cached directories first, then runs install steps, saves
+/// the cache, and starts services.
 pub fn generate_install_and_start_command(services: &[BareServiceConfig]) -> String {
     let mut parts: Vec<String> = vec![format!("mkdir -p {LOG_DIR}")];
+    if let Some(restore) = generate_cache_restore_command(services) {
+        parts.push(restore);
+    }
     for svc in services {
         for cmd in &svc.install {
             let install_log = format!("{LOG_DIR}/{}.install.log", svc.name);
             parts.push(format!("cd /workspace && ({cmd}) >> {install_log} 2>&1"));
         }
+    }
+    if let Some(save) = generate_cache_save_command(services) {
+        parts.push(save);
     }
     parts.push(format!("sh {SUPERVISOR_DIR}/start-all.sh"));
     parts.join(" && ")
@@ -312,6 +388,7 @@ mod tests {
             port: None,
             restart,
             install: vec![],
+            cache: vec![],
         }
     }
 
@@ -478,6 +555,7 @@ mod tests {
             port: None,
             restart: RestartPolicy::No,
             install: vec!["npm install".to_string(), "npm run build".to_string()],
+            cache: vec![],
         };
         let cmd = generate_setup_and_start_command(&[svc]);
         assert!(cmd.contains("npm install"));
@@ -513,6 +591,7 @@ mod tests {
             port: None,
             restart: RestartPolicy::No,
             install: vec!["go mod download".to_string()],
+            cache: vec![],
         };
         let cmd = generate_install_and_start_command(&[svc]);
         assert!(cmd.contains("go mod download"));
@@ -532,5 +611,163 @@ mod tests {
     fn test_empty_services_stop_all_script() {
         let script = stop_all_script(&[]);
         assert!(script.contains("all services stopped"));
+    }
+
+    #[test]
+    fn test_cache_restore_uses_hardlink_copy_not_symlink() {
+        let svc = BareServiceConfig {
+            name: "vite-web".to_string(),
+            command: "npm run dev".to_string(),
+            port: None,
+            restart: RestartPolicy::No,
+            install: vec![],
+            cache: vec!["node_modules".to_string()],
+        };
+        let cmd = generate_cache_restore_command(&[svc]).unwrap();
+        assert!(
+            cmd.contains("cp -al"),
+            "should use cp -al (hardlink copy), not symlink"
+        );
+        assert!(!cmd.contains("ln -sfn"), "should NOT use ln -sfn (symlink)");
+        assert!(
+            cmd.contains("rm -rf '/workspace/node_modules/.vite'"),
+            "should clean stale Vite cache after restore"
+        );
+        assert!(
+            cmd.contains("/coast-cache/vite-web/node_modules"),
+            "cache source should be /coast-cache/<service>/<dir>"
+        );
+    }
+
+    #[test]
+    fn test_cache_save_command() {
+        let svc = BareServiceConfig {
+            name: "vite-web".to_string(),
+            command: "npm run dev".to_string(),
+            port: None,
+            restart: RestartPolicy::No,
+            install: vec![],
+            cache: vec!["node_modules".to_string()],
+        };
+        let cmd = generate_cache_save_command(&[svc]).unwrap();
+        assert!(cmd.contains("cp -al"), "should use cp -al for save");
+        assert!(
+            cmd.contains("/coast-cache/vite-web/node_modules"),
+            "cache dest should be /coast-cache/<service>/<dir>"
+        );
+    }
+
+    #[test]
+    fn test_cache_commands_none_when_no_cache_dirs() {
+        let svc = test_svc("web", "npm run dev", RestartPolicy::No);
+        assert!(generate_cache_save_command(&[svc.clone()]).is_none());
+        assert!(generate_cache_restore_command(&[svc]).is_none());
+    }
+
+    #[test]
+    fn test_install_and_start_with_cache_includes_restore_and_save() {
+        let svc = BareServiceConfig {
+            name: "vite".to_string(),
+            command: "npm run dev".to_string(),
+            port: Some(3040),
+            restart: RestartPolicy::OnFailure,
+            install: vec!["npm install".to_string()],
+            cache: vec!["node_modules".to_string()],
+        };
+        let cmd = generate_install_and_start_command(&[svc]);
+        let segments: Vec<&str> = cmd.split(" && ").collect();
+
+        let restore_idx = segments
+            .iter()
+            .position(|s| s.contains("coast-cache") && s.contains("cp -al"))
+            .expect("must have cache restore step");
+        let install_idx = segments
+            .iter()
+            .position(|s| s.contains("npm install"))
+            .expect("must have install step");
+        let save_idx = segments
+            .iter()
+            .rposition(|s| s.contains("coast-cache") && s.contains("cp -al"))
+            .expect("must have cache save step");
+        let start_idx = segments
+            .iter()
+            .position(|s| s.contains("start-all.sh"))
+            .expect("must have start step");
+
+        assert!(
+            restore_idx < install_idx,
+            "cache restore must come before install"
+        );
+        assert!(
+            install_idx < save_idx,
+            "install must come before cache save"
+        );
+        assert!(save_idx < start_idx, "cache save must come before start");
+    }
+
+    #[test]
+    fn test_service_wrapper_script_has_pid_guard() {
+        let svc = BareServiceConfig {
+            name: "vite".to_string(),
+            command: "npm run dev".to_string(),
+            port: Some(3040),
+            restart: RestartPolicy::OnFailure,
+            install: vec![],
+            cache: vec![],
+        };
+        let script = service_wrapper_script(&svc);
+        assert!(
+            script.contains(".pid"),
+            "wrapper must check PID file for duplicate guard"
+        );
+        assert!(
+            script.contains("kill -0"),
+            "wrapper must check if old PID is alive"
+        );
+        assert!(
+            script.contains("exit 0"),
+            "wrapper must exit if already running"
+        );
+    }
+
+    #[test]
+    fn test_service_wrapper_script_port_cleanup() {
+        let svc = BareServiceConfig {
+            name: "vite".to_string(),
+            command: "npm run dev".to_string(),
+            port: Some(3040),
+            restart: RestartPolicy::OnFailure,
+            install: vec![],
+            cache: vec![],
+        };
+        let script = service_wrapper_script(&svc);
+        assert!(
+            script.contains("fuser -k 3040/tcp"),
+            "wrapper must kill processes holding the port before starting"
+        );
+    }
+
+    #[test]
+    fn test_service_wrapper_script_no_port_no_fuser() {
+        let svc = test_svc("worker", "npm run worker", RestartPolicy::OnFailure);
+        let script = service_wrapper_script(&svc);
+        assert!(
+            !script.contains("fuser"),
+            "wrapper without port should not use fuser"
+        );
+    }
+
+    #[test]
+    fn test_stop_all_script_kills_child_processes() {
+        let svc = test_svc("web", "npm run dev", RestartPolicy::OnFailure);
+        let script = stop_all_script(&[svc]);
+        assert!(
+            script.contains("--ppid"),
+            "stop script must kill child processes via --ppid"
+        );
+        assert!(
+            script.contains("kill \"$CHILD\""),
+            "stop script must kill each child"
+        );
     }
 }

@@ -67,6 +67,9 @@ pub struct AppState {
     >,
     /// Cached count of non-running inner services per instance (keyed by "project:name").
     pub service_health_cache: Mutex<std::collections::HashMap<String, u32>>,
+    /// Cached port health status per instance (keyed by "project:name").
+    pub port_health_cache:
+        Mutex<std::collections::HashMap<String, Vec<coast_core::types::PortHealthStatus>>>,
     /// Per-project operation semaphores. Mutating operations (run, assign, start,
     /// stop, rm, rebuild) acquire a permit before proceeding, serializing heavy
     /// Docker workflows within the same project.
@@ -121,6 +124,7 @@ impl AppState {
             lsp_sessions: Mutex::new(std::collections::HashMap::new()),
             shared_services_cache: Mutex::new(std::collections::HashMap::new()),
             service_health_cache: Mutex::new(std::collections::HashMap::new()),
+            port_health_cache: Mutex::new(std::collections::HashMap::new()),
             project_ops: Mutex::new(std::collections::HashMap::new()),
             language_tx,
             language_rx,
@@ -153,6 +157,7 @@ impl AppState {
             lsp_sessions: Mutex::new(std::collections::HashMap::new()),
             shared_services_cache: Mutex::new(std::collections::HashMap::new()),
             service_health_cache: Mutex::new(std::collections::HashMap::new()),
+            port_health_cache: Mutex::new(std::collections::HashMap::new()),
             project_ops: Mutex::new(std::collections::HashMap::new()),
             language_tx,
             language_rx,
@@ -381,6 +386,20 @@ async fn handle_connection(stream: tokio::net::UnixStream, state: Arc<AppState>)
         return result;
     }
     if let Request::Assign(req) = request {
+        if req.explain {
+            let result = handlers::assign::handle_explain(req, &state).await;
+            let response = match result {
+                Ok(resp) => Response::AssignExplain(resp),
+                Err(e) => Response::Error(coast_core::protocol::ErrorResponse {
+                    error: e.to_string(),
+                }),
+            };
+            track(
+                matches!(&response, Response::AssignExplain(_)),
+                base_metadata.clone(),
+            );
+            return write_response(&mut writer, &response).await;
+        }
         let result = handle_assign_streaming(req, &state, &mut writer).await;
         track(result.is_ok(), base_metadata.clone());
         return result;

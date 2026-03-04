@@ -371,6 +371,42 @@ export function useServiceRestartMutation() {
   });
 }
 
+export function useBareServiceStopMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ project, name, service }: ServiceMutationVars) =>
+      api.bareServiceStop(project, name, service),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function useBareServiceStartMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ project, name, service }: ServiceMutationVars) =>
+      api.bareServiceStart(project, name, service),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function useBareServiceRestartMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ project, name, service }: ServiceMutationVars) =>
+      api.bareServiceRestart(project, name, service),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function usePortHealth(project: string, name: string) {
+  return useQuery({
+    queryKey: ['portHealth', project, name],
+    queryFn: () => api.portHealth(project, name),
+    refetchInterval: 10_000,
+    enabled: !!project && !!name,
+  });
+}
+
 export function useServiceRmMutation() {
   const qc = useQueryClient();
   return useMutation({

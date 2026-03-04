@@ -7,7 +7,7 @@ use clap::Args;
 use colored::Colorize;
 use rust_i18n::t;
 
-use coast_core::protocol::{AssignRequest, Request, Response};
+use coast_core::protocol::{AssignExplainResponse, AssignRequest, Request, Response};
 
 use super::build::{ProgressDisplay, Verbosity};
 
@@ -28,6 +28,10 @@ pub struct AssignArgs {
     /// Show verbose detail (e.g., docker build logs).
     #[arg(short = 'v', long)]
     pub verbose: bool,
+
+    /// Analyze what an assign would do without executing it.
+    #[arg(long)]
+    pub explain: bool,
 }
 
 /// Execute the `coast assign` command.
@@ -54,55 +58,150 @@ pub async fn execute(args: &AssignArgs, project: &str) -> Result<()> {
         project: project.to_string(),
         worktree: worktree.clone(),
         commit_sha,
+        explain: args.explain,
     });
 
-    let verbosity = if args.silent {
-        Verbosity::Silent
-    } else if args.verbose {
-        Verbosity::Verbose
+    if args.explain {
+        let response = super::send_request(request).await;
+        match response {
+            Ok(Response::AssignExplain(resp)) => {
+                print_explain(&resp);
+                Ok(())
+            }
+            Ok(Response::Error(e)) => bail!("{}", e.error),
+            Err(e) => bail!("{}", e),
+            _ => bail!("{}", t!("error.unexpected_response")),
+        }
     } else {
-        Verbosity::Default
-    };
+        let verbosity = if args.silent {
+            Verbosity::Silent
+        } else if args.verbose {
+            Verbosity::Verbose
+        } else {
+            Verbosity::Default
+        };
 
-    let mut display = ProgressDisplay::new(verbosity);
+        let mut display = ProgressDisplay::new(verbosity);
 
-    let response = super::send_assign_request(request, |event| {
-        display.handle_event(event);
-    })
-    .await;
+        let response = super::send_assign_request(request, |event| {
+            display.handle_event(event);
+        })
+        .await;
 
-    display.finalize();
+        display.finalize();
 
-    match response {
-        Ok(Response::Assign(resp)) => {
-            if verbosity != Verbosity::Silent {
-                eprintln!();
+        match response {
+            Ok(Response::Assign(resp)) => {
+                if verbosity != Verbosity::Silent {
+                    eprintln!();
+                }
+                println!(
+                    "{} {}",
+                    "ok".green().bold(),
+                    t!(
+                        "cli.ok.instance_assigned",
+                        worktree = resp.worktree,
+                        name = resp.name
+                    ),
+                );
+                if let Some(ref prev) = resp.previous_worktree {
+                    println!("   Previous: {}", prev);
+                }
+                let elapsed_secs = resp.time_elapsed_ms as f64 / 1000.0;
+                println!("   Elapsed:  {:.1}s", elapsed_secs);
+                Ok(())
             }
-            println!(
-                "{} {}",
-                "ok".green().bold(),
-                t!(
-                    "cli.ok.instance_assigned",
-                    worktree = resp.worktree,
-                    name = resp.name
-                ),
-            );
-            if let Some(ref prev) = resp.previous_worktree {
-                println!("   Previous: {}", prev);
+            Ok(Response::Error(e)) => {
+                bail!("{}", e.error);
             }
-            let elapsed_secs = resp.time_elapsed_ms as f64 / 1000.0;
-            println!("   Elapsed:  {:.1}s", elapsed_secs);
-            Ok(())
+            Err(e) => {
+                bail!("{}", e);
+            }
+            _ => {
+                bail!("{}", t!("error.unexpected_response"));
+            }
         }
-        Ok(Response::Error(e)) => {
-            bail!("{}", e.error);
+    }
+}
+
+fn print_explain(resp: &AssignExplainResponse) {
+    println!("{}", "Assign Explain".bold().underline());
+    println!();
+    println!("  Instance:  {}", resp.name.bold());
+    println!("  Target:    {}", resp.worktree.green().bold());
+    if let Some(ref current) = resp.current_branch {
+        println!("  Current:   {current}");
+    }
+    println!();
+
+    println!("{}", "Service Actions".bold());
+    let max_name = resp
+        .services
+        .iter()
+        .map(|s| s.name.len())
+        .max()
+        .unwrap_or(0);
+    for svc in &resp.services {
+        let action_display = match svc.action.as_str() {
+            "none" => "none".dimmed().to_string(),
+            "hot" => "hot".green().to_string(),
+            "restart" => "restart".yellow().to_string(),
+            "rebuild" => "rebuild".red().to_string(),
+            other => other.to_string(),
+        };
+        println!(
+            "  {:<width$}  {}",
+            svc.name,
+            action_display,
+            width = max_name
+        );
+    }
+    println!();
+
+    println!("{}", "Worktree".bold());
+    println!(
+        "  Exists:  {}",
+        if resp.worktree_exists {
+            "yes".green()
+        } else {
+            "no (will be created)".yellow()
         }
-        Err(e) => {
-            bail!("{}", e);
+    );
+    println!(
+        "  Synced:  {}",
+        if resp.worktree_synced {
+            "yes (gitignored copy will be skipped)".green()
+        } else {
+            "no (gitignored files will be hardlinked)".yellow()
         }
-        _ => {
-            bail!("{}", t!("error.unexpected_response"));
-        }
+    );
+    println!();
+
+    println!("{}", "File Counts".bold());
+    println!(
+        "  Tracked files (after excludes): {}",
+        resp.tracked_file_count
+    );
+    println!(
+        "  Gitignored files to sync:       {}",
+        resp.gitignored_file_count
+    );
+    println!(
+        "  Changed files between branches:  {}",
+        resp.changed_files_count
+    );
+    println!(
+        "  Excluded paths:                  {}",
+        resp.exclude_paths.len()
+    );
+    println!();
+
+    if resp.has_bare_install {
+        println!(
+            "{}  Bare services have install steps that will run on assign.",
+            "Note:".yellow().bold()
+        );
+        println!();
     }
 }
 

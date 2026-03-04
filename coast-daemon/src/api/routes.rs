@@ -9,6 +9,7 @@ use serde_json::json;
 
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use coast_core::protocol::*;
+use coast_docker::runtime::Runtime;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -40,6 +41,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/service/start", post(service_start))
         .route("/service/restart", post(service_restart))
         .route("/service/rm", post(service_rm))
+        .route("/bare-service/stop", post(bare_service_stop))
+        .route("/bare-service/start", post(bare_service_start))
+        .route("/bare-service/restart", post(bare_service_restart))
+        .route("/port-health", post(port_health))
         .route("/rm-build", post(rm_build))
         .route("/archive", post(archive_project))
         .route("/unarchive", post(unarchive_project))
@@ -810,4 +815,218 @@ async fn service_rm(
                 .into_response()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Bare service lifecycle controls
+// ---------------------------------------------------------------------------
+
+fn resolve_bare_service_port(_state: &AppState, project: &str, service: &str) -> Option<u16> {
+    let home = dirs::home_dir()?;
+    let cf_path = home
+        .join(".coast")
+        .join("images")
+        .join(project)
+        .join("latest")
+        .join("coastfile.toml");
+    let cf = coast_core::coastfile::Coastfile::from_file(&cf_path).ok()?;
+    cf.services
+        .iter()
+        .find(|s| s.name == service)
+        .and_then(|s| s.port)
+}
+
+async fn run_bare_exec(
+    state: &AppState,
+    container_id: &str,
+    cmd: &str,
+) -> std::result::Result<String, String> {
+    let docker = state
+        .docker
+        .as_ref()
+        .ok_or_else(|| "Docker not available".to_string())?;
+    let rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let result = rt
+        .exec_in_coast(container_id, &["sh", "-c", cmd])
+        .await
+        .map_err(|e| format!("exec failed: {e}"))?;
+    if result.success() {
+        Ok(result.stdout)
+    } else {
+        Err(result.stderr)
+    }
+}
+
+/// Kill a bare service's process tree. The .pid file tracks the wrapper shell,
+/// but the actual server (Node/Vite) is a child. We kill the wrapper, then
+/// find and kill any remaining children and any process using the service's port.
+fn bare_stop_script(svc: &str, port: Option<u16>) -> String {
+    let dir = crate::bare_services::SUPERVISOR_DIR;
+    let mut script = format!(
+        "PID=$(cat {dir}/{svc}.pid 2>/dev/null); \
+         if [ -n \"$PID\" ]; then \
+           kill \"$PID\" 2>/dev/null; \
+           for CHILD in $(ps -o pid= --ppid \"$PID\" 2>/dev/null || true); do \
+             kill \"$CHILD\" 2>/dev/null; \
+           done; \
+         fi; \
+         rm -f {dir}/{svc}.pid"
+    );
+    if let Some(p) = port {
+        script.push_str(&format!(
+            "; sleep 0.5; \
+             PIDS=$(fuser {p}/tcp 2>/dev/null || true); \
+             for P in $PIDS; do kill \"$P\" 2>/dev/null; done",
+        ));
+    }
+    script
+}
+
+async fn bare_service_stop(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ServiceControlRequest>,
+) -> impl IntoResponse {
+    let container_id = match resolve_container_id(&state, &req.project, &req.name).await {
+        Ok(id) => id,
+        Err(e) => return e.into_response(),
+    };
+    state.emit_event(CoastEvent::ServiceStopping {
+        name: req.name.clone(),
+        project: req.project.clone(),
+        service: req.service.clone(),
+    });
+    let port = resolve_bare_service_port(&state, &req.project, &req.service);
+    let cmd = bare_stop_script(&req.service, port);
+    match run_bare_exec(&state, &container_id, &cmd).await {
+        Ok(_) => {
+            state.emit_event(CoastEvent::ServiceStopped {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+            });
+            (StatusCode::OK, Json(SuccessResponse { success: true })).into_response()
+        }
+        Err(e) => {
+            state.emit_event(CoastEvent::ServiceError {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+                error: e.clone(),
+            });
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn bare_service_start(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ServiceControlRequest>,
+) -> impl IntoResponse {
+    let container_id = match resolve_container_id(&state, &req.project, &req.name).await {
+        Ok(id) => id,
+        Err(e) => return e.into_response(),
+    };
+    state.emit_event(CoastEvent::ServiceStarting {
+        name: req.name.clone(),
+        project: req.project.clone(),
+        service: req.service.clone(),
+    });
+    let cmd = format!(
+        "sh {dir}/{svc}.sh &",
+        dir = crate::bare_services::SUPERVISOR_DIR,
+        svc = req.service,
+    );
+    match run_bare_exec(&state, &container_id, &cmd).await {
+        Ok(_) => {
+            state.emit_event(CoastEvent::ServiceStarted {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+            });
+            (StatusCode::OK, Json(SuccessResponse { success: true })).into_response()
+        }
+        Err(e) => {
+            state.emit_event(CoastEvent::ServiceError {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+                error: e.clone(),
+            });
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn bare_service_restart(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ServiceControlRequest>,
+) -> impl IntoResponse {
+    let container_id = match resolve_container_id(&state, &req.project, &req.name).await {
+        Ok(id) => id,
+        Err(e) => return e.into_response(),
+    };
+    state.emit_event(CoastEvent::ServiceRestarting {
+        name: req.name.clone(),
+        project: req.project.clone(),
+        service: req.service.clone(),
+    });
+    let port = resolve_bare_service_port(&state, &req.project, &req.service);
+    let dir = crate::bare_services::SUPERVISOR_DIR;
+    let cmd = format!(
+        "{}; sleep 1; sh {dir}/{svc}.sh &",
+        bare_stop_script(&req.service, port),
+        dir = dir,
+        svc = req.service,
+    );
+    match run_bare_exec(&state, &container_id, &cmd).await {
+        Ok(_) => {
+            state.emit_event(CoastEvent::ServiceRestarted {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+            });
+            (StatusCode::OK, Json(SuccessResponse { success: true })).into_response()
+        }
+        Err(e) => {
+            state.emit_event(CoastEvent::ServiceError {
+                name: req.name,
+                project: req.project,
+                service: req.service,
+                error: e.clone(),
+            });
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Port health
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct PortHealthRequest {
+    project: String,
+    name: String,
+}
+
+async fn port_health(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PortHealthRequest>,
+) -> impl IntoResponse {
+    let key = format!("{}:{}", req.project, req.name);
+    let cache = state.port_health_cache.lock().await;
+    let ports = cache.get(&key).cloned().unwrap_or_default();
+    Json(json!({ "ports": ports }))
 }

@@ -723,6 +723,68 @@ args = ["-y", "@upstash/context7-mcp"]
 }
 
 #[test]
+fn test_standalone_toml_roundtrip_assign_exclude_paths_and_triggers() {
+    let toml_input = r#"
+[coast]
+name = "test-app"
+compose = "./docker-compose.yml"
+
+[assign]
+default = "none"
+exclude_paths = ["docs", ".yarn", "apps/mobile"]
+
+[assign.services]
+web = "hot"
+api = "restart"
+worker = "rebuild"
+
+[assign.rebuild_triggers]
+api = ["Dockerfile", "package.json"]
+worker = ["Dockerfile", "Gemfile", "Gemfile.lock"]
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let original = Coastfile::parse(toml_input, dir.path()).unwrap();
+
+    assert_eq!(
+        original.assign.exclude_paths,
+        vec!["docs", ".yarn", "apps/mobile"]
+    );
+    assert_eq!(original.assign.rebuild_triggers.len(), 2);
+
+    let standalone = original.to_standalone_toml();
+
+    assert!(
+        standalone.contains("exclude_paths"),
+        "standalone toml must contain exclude_paths"
+    );
+    assert!(
+        standalone.contains("rebuild_triggers"),
+        "standalone toml must contain rebuild_triggers section"
+    );
+    assert!(
+        standalone.contains("docs"),
+        "exclude_paths must contain 'docs'"
+    );
+    assert!(
+        standalone.contains("apps/mobile"),
+        "exclude_paths must contain 'apps/mobile'"
+    );
+    assert!(
+        standalone.contains("Gemfile.lock"),
+        "rebuild_triggers must contain 'Gemfile.lock'"
+    );
+
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+    assert_eq!(reparsed.assign.exclude_paths, original.assign.exclude_paths);
+    assert_eq!(
+        reparsed.assign.rebuild_triggers,
+        original.assign.rebuild_triggers
+    );
+    assert_eq!(reparsed.assign.services, original.assign.services);
+    assert_eq!(reparsed.assign.default, original.assign.default);
+}
+
+#[test]
 fn test_standalone_toml_from_extended_coastfile() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -1266,4 +1328,104 @@ install = "pip install -r requirements.txt"
         .find(|s| s.name == "worker")
         .unwrap();
     assert_eq!(worker.install, vec!["pip install -r requirements.txt"]);
+}
+
+#[test]
+fn test_healthcheck_parsing_and_roundtrip() {
+    let toml_input = r#"
+[coast]
+name = "test-app"
+compose = "./docker-compose.yml"
+
+[ports]
+web = 3000
+api = 8080
+
+[healthcheck]
+web = "/"
+api = "/healthz"
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let cf = Coastfile::parse(toml_input, dir.path()).unwrap();
+
+    assert_eq!(cf.healthcheck.len(), 2);
+    assert_eq!(cf.healthcheck.get("web").unwrap(), "/");
+    assert_eq!(cf.healthcheck.get("api").unwrap(), "/healthz");
+
+    let standalone = cf.to_standalone_toml();
+    assert!(
+        standalone.contains("[healthcheck]"),
+        "standalone toml must contain [healthcheck] section"
+    );
+    assert!(standalone.contains("web = \"/\""), "must contain web path");
+    assert!(
+        standalone.contains("api = \"/healthz\""),
+        "must contain api path"
+    );
+
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+    assert_eq!(reparsed.healthcheck, cf.healthcheck);
+}
+
+#[test]
+fn test_healthcheck_empty_by_default() {
+    let toml_input = r#"
+[coast]
+name = "test-app"
+compose = "./docker-compose.yml"
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let cf = Coastfile::parse(toml_input, dir.path()).unwrap();
+    assert!(cf.healthcheck.is_empty());
+}
+
+#[test]
+fn test_bare_service_cache_field_parsing() {
+    let toml_input = r#"
+[coast]
+name = "test-app"
+
+[services.vite-web]
+command = "npm run dev"
+port = 3040
+install = "cd /workspace && npm install"
+cache = ["node_modules"]
+
+[services.worker]
+command = "npm run worker"
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let cf = Coastfile::parse(toml_input, dir.path()).unwrap();
+
+    let vite = cf.services.iter().find(|s| s.name == "vite-web").unwrap();
+    assert_eq!(vite.cache, vec!["node_modules"]);
+
+    let worker = cf.services.iter().find(|s| s.name == "worker").unwrap();
+    assert!(worker.cache.is_empty(), "cache should default to empty");
+}
+
+#[test]
+fn test_bare_service_cache_roundtrip() {
+    let toml_input = r#"
+[coast]
+name = "test-app"
+
+[services.vite-web]
+command = "npm run dev"
+port = 3040
+cache = ["node_modules", ".next"]
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let cf = Coastfile::parse(toml_input, dir.path()).unwrap();
+
+    let standalone = cf.to_standalone_toml();
+    assert!(standalone.contains("node_modules"), "must serialize cache");
+
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+    let vite = reparsed
+        .services
+        .iter()
+        .find(|s| s.name == "vite-web")
+        .unwrap();
+    assert_eq!(vite.cache, vec!["node_modules", ".next"]);
 }

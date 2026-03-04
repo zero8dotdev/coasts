@@ -35,6 +35,9 @@ pub struct Coastfile {
     pub runtime: RuntimeType,
     /// Port mappings (logical_name -> port).
     pub ports: HashMap<String, u16>,
+    /// HTTP healthcheck paths per port (logical_name -> path like "/").
+    /// Ports with a healthcheck use HTTP GET instead of TCP for health probes.
+    pub healthcheck: HashMap<String, String>,
     /// Default primary port service name (shown starred in UI/CLI).
     pub primary_port: Option<String>,
     /// Secret configurations.
@@ -232,6 +235,7 @@ impl Coastfile {
             compose: None,
             runtime: RuntimeType::Dind,
             ports: HashMap::new(),
+            healthcheck: HashMap::new(),
             primary_port: None,
             secrets: vec![],
             inject: HostInjectConfig {
@@ -490,6 +494,7 @@ impl Coastfile {
             compose,
             runtime,
             ports,
+            healthcheck: raw.healthcheck,
             primary_port,
             secrets,
             inject,
@@ -679,6 +684,7 @@ impl Coastfile {
             compose,
             runtime,
             ports: raw.ports,
+            healthcheck: raw.healthcheck,
             primary_port,
             secrets,
             inject,

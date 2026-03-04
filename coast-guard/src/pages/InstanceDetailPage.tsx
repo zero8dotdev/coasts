@@ -19,10 +19,12 @@ import {
   useVolumes,
   useExecSessions,
   useMcpServers,
+  usePortHealth,
 } from '../api/hooks';
 import { api } from '../api/endpoints';
 import Breadcrumb from '../components/Breadcrumb';
 import StatusBadge from '../components/StatusBadge';
+import HealthDot from '../components/HealthDot';
 import TabBar, { type TabDef } from '../components/TabBar';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -111,6 +113,7 @@ export default function InstanceDetailPage() {
 
   const { data: execData } = useExecSessions(project, name, isRunning);
   const { data: portsData } = usePorts(project, name);
+  const { data: healthData } = usePortHealth(project as string, name as string);
   const { data: servicesData } = useServices(project, name);
   const { data: secretsData } = useSecrets(project, name);
   const { data: imagesData } = useImages(project, name);
@@ -221,6 +224,7 @@ export default function InstanceDetailPage() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-[var(--primary)]/12 border border-[var(--primary)]/30 text-[var(--primary-strong)] dark:text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors shrink-0"
               >
+                <HealthDot healthy={healthData?.ports?.find((p) => p.logical_name === (instance.primary_port_service ?? 'web'))?.healthy} size={6} />
                 {instance.primary_port_service ?? 'web'}
                 <ArrowSquareOut size={11} />
               </a>

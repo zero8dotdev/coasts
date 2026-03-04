@@ -738,6 +738,7 @@ fn test_bare_service_config_serialization() {
         port: Some(3000),
         restart: RestartPolicy::OnFailure,
         install: vec!["npm install".to_string()],
+        cache: vec!["node_modules".to_string()],
     };
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: BareServiceConfig = serde_json::from_str(&json).unwrap();
@@ -746,6 +747,7 @@ fn test_bare_service_config_serialization() {
     assert_eq!(deserialized.port, Some(3000));
     assert_eq!(deserialized.restart, RestartPolicy::OnFailure);
     assert_eq!(deserialized.install, vec!["npm install"]);
+    assert_eq!(deserialized.cache, vec!["node_modules"]);
 }
 
 #[test]
@@ -756,6 +758,7 @@ fn test_bare_service_config_defaults() {
         port: None,
         restart: RestartPolicy::default(),
         install: vec![],
+        cache: vec![],
     };
     assert_eq!(config.port, None);
     assert!(config.install.is_empty());
@@ -777,4 +780,37 @@ fn test_mcp_client_connector_custom_format_at_path() {
         Some("/home/user/.my-fork/mcp.json")
     );
     assert_eq!(config.format, Some(McpClientFormat::ClaudeCode));
+}
+
+#[test]
+fn test_port_health_status_serialization() {
+    let status = PortHealthStatus {
+        logical_name: "web".to_string(),
+        canonical_port: 3000,
+        dynamic_port: 63100,
+        is_primary: true,
+        healthy: true,
+    };
+    let json = serde_json::to_string(&status).unwrap();
+    let deserialized: PortHealthStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.logical_name, "web");
+    assert_eq!(deserialized.canonical_port, 3000);
+    assert_eq!(deserialized.dynamic_port, 63100);
+    assert!(deserialized.is_primary);
+    assert!(deserialized.healthy);
+}
+
+#[test]
+fn test_port_health_status_unhealthy() {
+    let status = PortHealthStatus {
+        logical_name: "api".to_string(),
+        canonical_port: 8080,
+        dynamic_port: 63200,
+        is_primary: false,
+        healthy: false,
+    };
+    let json = serde_json::to_string(&status).unwrap();
+    let deserialized: PortHealthStatus = serde_json::from_str(&json).unwrap();
+    assert!(!deserialized.healthy);
+    assert!(!deserialized.is_primary);
 }

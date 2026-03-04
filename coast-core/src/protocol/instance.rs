@@ -55,6 +55,9 @@ pub struct AssignRequest {
     /// Git commit SHA for the worktree being assigned.
     #[serde(default)]
     pub commit_sha: Option<String>,
+    /// When true, analyze and report the assign plan without executing it.
+    #[serde(default)]
+    pub explain: bool,
 }
 
 /// Response after a successful worktree assignment.
@@ -70,6 +73,44 @@ pub struct AssignResponse {
     /// Time elapsed in milliseconds.
     #[serde(default)]
     pub time_elapsed_ms: u64,
+}
+
+/// Per-service action in an explain response.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AssignExplainService {
+    /// Compose service name.
+    pub name: String,
+    /// Action that would be taken (none, hot, restart, rebuild).
+    pub action: String,
+}
+
+/// Response for `coast assign --explain`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AssignExplainResponse {
+    /// Instance name.
+    pub name: String,
+    /// Target worktree.
+    pub worktree: String,
+    /// Current branch of the instance.
+    pub current_branch: Option<String>,
+    /// Per-service action plan.
+    pub services: Vec<AssignExplainService>,
+    /// Paths excluded from the file diff and gitignored sync.
+    pub exclude_paths: Vec<String>,
+    /// Number of tracked files that would be diffed.
+    pub tracked_file_count: usize,
+    /// Number of gitignored files that would be synced (first assign only).
+    pub gitignored_file_count: usize,
+    /// Whether the worktree already exists on disk.
+    pub worktree_exists: bool,
+    /// Whether gitignored files were already synced (.coast-synced marker).
+    pub worktree_synced: bool,
+    /// Whether bare services have an install step.
+    pub has_bare_install: bool,
+    /// Files changed between current and target branch.
+    pub changed_files_count: usize,
 }
 
 /// Request to unassign a worktree, returning the instance to the repo's default branch.

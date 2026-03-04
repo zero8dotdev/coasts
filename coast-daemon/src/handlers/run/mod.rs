@@ -1236,6 +1236,7 @@ pub async fn handle(
             project: req.project.clone(),
             worktree: worktree_name.clone(),
             commit_sha: None,
+            explain: false,
         };
 
         match super::assign::handle(assign_req, state, progress.clone()).await {

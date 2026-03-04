@@ -88,6 +88,16 @@ impl Coastfile {
             }
         }
 
+        // [healthcheck]
+        if !self.healthcheck.is_empty() {
+            writeln!(out, "\n[healthcheck]").unwrap();
+            let mut checks: Vec<_> = self.healthcheck.iter().collect();
+            checks.sort_by_key(|(k, _)| *k);
+            for (name, path) in checks {
+                writeln!(out, "{name} = {}", toml_quote(path)).unwrap();
+            }
+        }
+
         // [shared_services.*]
         for svc in &self.shared_services {
             writeln!(out, "\n[shared_services.{}]", svc.name).unwrap();
@@ -220,12 +230,35 @@ impl Coastfile {
             toml_quote(&self.assign.default.to_string())
         )
         .unwrap();
+        if !self.assign.exclude_paths.is_empty() {
+            let paths_str = self
+                .assign
+                .exclude_paths
+                .iter()
+                .map(|p| toml_quote(p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(out, "exclude_paths = [{paths_str}]").unwrap();
+        }
         if !self.assign.services.is_empty() {
             writeln!(out, "[assign.services]").unwrap();
             let mut svcs: Vec<_> = self.assign.services.iter().collect();
             svcs.sort_by_key(|(k, _)| *k);
             for (name, action) in svcs {
                 writeln!(out, "{name} = {}", toml_quote(&action.to_string())).unwrap();
+            }
+        }
+        if !self.assign.rebuild_triggers.is_empty() {
+            writeln!(out, "[assign.rebuild_triggers]").unwrap();
+            let mut triggers: Vec<_> = self.assign.rebuild_triggers.iter().collect();
+            triggers.sort_by_key(|(k, _)| *k);
+            for (name, paths) in triggers {
+                let paths_str = paths
+                    .iter()
+                    .map(|p| toml_quote(p))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(out, "{name} = [{paths_str}]").unwrap();
             }
         }
 
@@ -283,6 +316,18 @@ impl Coastfile {
                     )
                     .unwrap();
                 }
+            }
+            if !svc.cache.is_empty() {
+                writeln!(
+                    out,
+                    "cache = [{}]",
+                    svc.cache
+                        .iter()
+                        .map(|s| toml_quote(s))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .unwrap();
             }
         }
 

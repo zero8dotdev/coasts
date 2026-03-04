@@ -148,6 +148,8 @@ pub enum CoastEvent {
         project: String,
         service: Option<String>,
     },
+    #[serde(rename = "port.health_changed")]
+    PortHealthChanged { name: String, project: String },
     #[serde(rename = "config.language_changed")]
     ConfigLanguageChanged { language: String },
     #[serde(rename = "config.analytics_changed")]

@@ -98,3 +98,14 @@ pub struct PortMapping {
     #[serde(default)]
     pub is_primary: bool,
 }
+
+/// Health status of a port (result of TCP probe).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PortHealthStatus {
+    pub logical_name: String,
+    pub canonical_port: u16,
+    pub dynamic_port: u16,
+    pub is_primary: bool,
+    pub healthy: bool,
+}

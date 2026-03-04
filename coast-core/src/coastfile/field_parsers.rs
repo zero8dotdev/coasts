@@ -265,6 +265,7 @@ impl Coastfile {
                 port: raw.port,
                 restart,
                 install: raw.install,
+                cache: raw.cache,
             });
         }
         Ok(services)

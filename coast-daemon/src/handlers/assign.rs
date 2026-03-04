@@ -39,24 +39,14 @@ fn health_poll_interval(elapsed: tokio::time::Duration) -> tokio::time::Duration
 }
 
 /// Read the `AssignConfig` from the artifact's coastfile.toml.
-fn read_assign_config(project: &str) -> AssignConfig {
-    let home = dirs::home_dir().unwrap_or_default();
-    let coastfile_path = home
-        .join(".coast")
-        .join("images")
-        .join(project)
-        .join("latest")
-        .join("coastfile.toml");
-    if coastfile_path.exists() {
-        if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
-            return cf.assign;
-        }
-    }
-    AssignConfig::default()
+/// Parsed coastfile data needed during assign (loaded once, used many times).
+struct CoastfileData {
+    assign: AssignConfig,
+    worktree_dir: String,
+    has_compose: bool,
 }
 
-/// Read the worktree directory from the Coastfile (default: ".worktrees").
-fn read_worktree_dir(project: &str) -> String {
+fn load_coastfile_data(project: &str) -> CoastfileData {
     let home = dirs::home_dir().unwrap_or_default();
     let coastfile_path = home
         .join(".coast")
@@ -66,17 +56,27 @@ fn read_worktree_dir(project: &str) -> String {
         .join("coastfile.toml");
     if coastfile_path.exists() {
         if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
-            return cf.worktree_dir;
+            return CoastfileData {
+                assign: cf.assign,
+                worktree_dir: cf.worktree_dir,
+                has_compose: cf.compose.is_some(),
+            };
         }
     }
-    ".worktrees".to_string()
+    CoastfileData {
+        assign: AssignConfig::default(),
+        worktree_dir: ".worktrees".to_string(),
+        has_compose: true,
+    }
 }
 
 /// Detect the worktree parent directory from existing git worktrees.
 ///
 /// Runs `git worktree list --porcelain`, collects non-main worktree paths,
-/// and returns the common parent expressed as a path relative to the project root.
-/// Returns `None` if there are no non-main worktrees or no common parent can be derived.
+/// and returns the first relative path component shared by all worktrees.
+/// For example, worktrees at `.worktrees/feat-a` and `.worktrees/testing/speed`
+/// both have `.worktrees` as their first component, so `.worktrees` is returned.
+/// Returns `None` if there are no non-main worktrees or they disagree on the first component.
 pub fn detect_worktree_dir_from_git(project_root: &std::path::Path) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(["worktree", "list", "--porcelain"])
@@ -89,76 +89,32 @@ pub fn detect_worktree_dir_from_git(project_root: &std::path::Path) -> Option<St
     let stdout = String::from_utf8_lossy(&output.stdout);
     let canonical_root = project_root.canonicalize().ok()?;
 
-    let mut worktree_paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut first_components: Vec<String> = Vec::new();
     for line in stdout.lines() {
         if let Some(path_str) = line.strip_prefix("worktree ") {
             let path = std::path::PathBuf::from(path_str);
             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-            if canonical != canonical_root {
-                worktree_paths.push(canonical);
+            if canonical == canonical_root {
+                continue;
             }
-        }
-    }
-
-    if worktree_paths.is_empty() {
-        return None;
-    }
-
-    // Find the common parent of all non-main worktree paths.
-    let mut common = worktree_paths[0].parent()?.to_path_buf();
-    for wt in &worktree_paths[1..] {
-        let parent = wt.parent()?;
-        while !parent.starts_with(&common) {
-            if !common.pop() {
-                return None;
-            }
-        }
-        common = {
-            let mut prefix = std::path::PathBuf::new();
-            for (a, b) in common.components().zip(parent.components()) {
-                if a == b {
-                    prefix.push(a);
-                } else {
-                    break;
+            if let Ok(relative) = canonical.strip_prefix(&canonical_root) {
+                if let Some(first) = relative.components().next() {
+                    first_components.push(first.as_os_str().to_string_lossy().to_string());
                 }
             }
-            prefix
-        };
-    }
-
-    // Express the common parent relative to the project root.
-    if let Ok(relative) = common.strip_prefix(&canonical_root) {
-        let rel_str = relative.to_string_lossy().to_string();
-        if rel_str.is_empty() {
-            return None;
         }
-        return Some(rel_str);
     }
 
-    // Common parent is outside the project root -- build a ../ relative path.
-    let root_components: Vec<_> = canonical_root.components().collect();
-    let common_components: Vec<_> = common.components().collect();
-    let shared = root_components
-        .iter()
-        .zip(common_components.iter())
-        .take_while(|(a, b)| a == b)
-        .count();
-    if shared == 0 {
+    if first_components.is_empty() {
         return None;
     }
-    let ups = root_components.len() - shared;
-    let mut relative = std::path::PathBuf::new();
-    for _ in 0..ups {
-        relative.push("..");
+
+    let first = &first_components[0];
+    if first_components.iter().all(|c| c == first) {
+        Some(first.clone())
+    } else {
+        None
     }
-    for component in &common_components[shared..] {
-        relative.push(component);
-    }
-    let rel_str = relative.to_string_lossy().to_string();
-    if rel_str.is_empty() {
-        return None;
-    }
-    Some(rel_str)
 }
 
 /// Check if this project has a compose file configured.
@@ -202,24 +158,18 @@ const SYNC_EXCLUDE_DIRS: &[&str] = &[
     "target",
     ".cache",
     ".worktrees",
+    ".coasts",
     ".coast-synced",
     "__debug_bin",
 ];
 
 /// Build the shell script that syncs gitignored files from the project root
-/// into a worktree. Prefers `rsync --link-dest` (hardlinks, near-instant)
-/// and falls back to the `git ls-files | tar` pipeline if rsync is missing.
+/// into a worktree. Uses `git ls-files --others --ignored` to enumerate only
+/// the files that need syncing, then either hardlinks them via rsync
+/// `--files-from` or copies them via the tar pipeline. This avoids traversing
+/// the entire project tree (which is extremely slow in large repos).
 /// Touches `.coast-synced` on success so subsequent assigns skip the copy.
 fn build_gitignored_sync_script(root: &str, wt_path: &str, extra_excludes: &[String]) -> String {
-    let mut all_rsync_excludes: Vec<String> = SYNC_EXCLUDE_DIRS
-        .iter()
-        .map(|d| format!("--exclude='{d}'"))
-        .collect();
-    for path in extra_excludes {
-        all_rsync_excludes.push(format!("--exclude='{path}'"));
-    }
-    let excludes = all_rsync_excludes.join(" ");
-
     let mut grep_parts: Vec<String> = SYNC_EXCLUDE_DIRS
         .iter()
         .filter(|d| **d != ".git" && **d != ".coast-synced")
@@ -231,16 +181,19 @@ fn build_gitignored_sync_script(root: &str, wt_path: &str, extra_excludes: &[Str
     let grep_excludes = grep_parts.join("|");
 
     format!(
-        "if command -v rsync >/dev/null 2>&1; then \
-           rsync -a --link-dest='{root}' {excludes} --ignore-existing \
-             '{root}/' '{wt_path}/' 2>/dev/null; \
-         else \
-           cd '{root}' && \
-           git ls-files --others --ignored --exclude-standard 2>/dev/null | \
-           grep -v -E '{grep_excludes}' | \
-           tar -T - -cf - 2>/dev/null | \
-           tar -xf - -C '{wt_path}' 2>/dev/null; \
+        "cd '{root}' && \
+         git ls-files --others --ignored --exclude-standard 2>/dev/null | \
+         grep -v -E '{grep_excludes}' > /tmp/.coast-sync-filelist 2>/dev/null; \
+         if [ -s /tmp/.coast-sync-filelist ]; then \
+           if command -v rsync >/dev/null 2>&1; then \
+             rsync -a --link-dest='{root}' --files-from=/tmp/.coast-sync-filelist \
+               '{root}/' '{wt_path}/' 2>/dev/null; \
+           else \
+             tar -T /tmp/.coast-sync-filelist -cf - 2>/dev/null | \
+             tar -xf - -C '{wt_path}' 2>/dev/null; \
+           fi; \
          fi; \
+         rm -f /tmp/.coast-sync-filelist; \
          touch '{wt_path}/.coast-synced'; true"
     )
 }
@@ -281,6 +234,51 @@ fn classify_services(
     result
 }
 
+/// Fallback worktree creation when `git worktree add <path> <branch>` fails.
+/// Checks whether the branch already exists: if so, uses `--force` to reuse it;
+/// if not, creates a new branch with `-b`.
+async fn create_worktree_fallback(
+    root: &std::path::Path,
+    worktree_path: &std::path::Path,
+    branch: &str,
+) -> Result<std::process::Output> {
+    let branch_exists = tokio::process::Command::new("git")
+        .args(["rev-parse", "--verify", branch])
+        .current_dir(root)
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if branch_exists {
+        tokio::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                "--force",
+                &worktree_path.to_string_lossy(),
+                branch,
+            ])
+            .current_dir(root)
+            .output()
+            .await
+            .map_err(|e| CoastError::git(format!("Failed to create worktree: {e}")))
+    } else {
+        tokio::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                &worktree_path.to_string_lossy(),
+            ])
+            .current_dir(root)
+            .output()
+            .await
+            .map_err(|e| CoastError::git(format!("Failed to create worktree: {e}")))
+    }
+}
+
 /// Send a progress event, ignoring channel-closed errors.
 async fn emit(tx: &tokio::sync::mpsc::Sender<BuildProgressEvent>, event: BuildProgressEvent) {
     let _ = tx.send(event).await;
@@ -312,6 +310,199 @@ pub async fn handle(
     progress: tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Result<AssignResponse> {
     handle_with_status(req, state, progress, InstanceStatus::Assigning).await
+}
+
+async fn count_tracked_files(root: &std::path::Path, exclude_paths: &[String]) -> usize {
+    let output = tokio::process::Command::new("git")
+        .args(["ls-files"])
+        .current_dir(root)
+        .output()
+        .await
+        .ok();
+    output
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !exclude_paths.iter().any(|p| l.starts_with(p)))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+async fn count_gitignored_files(root: &std::path::Path, exclude_paths: &[String]) -> usize {
+    let output = tokio::process::Command::new("git")
+        .args(["ls-files", "--others", "--ignored", "--exclude-standard"])
+        .current_dir(root)
+        .output()
+        .await
+        .ok();
+    let exclude_patterns: Vec<&str> = exclude_paths
+        .iter()
+        .map(std::string::String::as_str)
+        .chain(SYNC_EXCLUDE_DIRS.iter().copied())
+        .collect();
+    output
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !exclude_patterns.iter().any(|p| l.starts_with(p)))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn check_has_bare_install(project: &str, build_id: Option<&str>) -> bool {
+    let home = dirs::home_dir().unwrap_or_default();
+    let cf_path = build_id
+        .map(|bid| {
+            home.join(".coast")
+                .join("images")
+                .join(project)
+                .join(bid)
+                .join("coastfile.toml")
+        })
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            home.join(".coast")
+                .join("images")
+                .join(project)
+                .join("latest")
+                .join("coastfile.toml")
+        });
+    coast_core::coastfile::Coastfile::from_file(&cf_path)
+        .map(|cf| cf.services.iter().any(|s| !s.install.is_empty()))
+        .unwrap_or(false)
+}
+
+/// Handle an explain-only assign request. Performs analysis without executing.
+pub async fn handle_explain(
+    req: AssignRequest,
+    state: &AppState,
+) -> Result<coast_core::protocol::AssignExplainResponse> {
+    info!(
+        name = %req.name,
+        project = %req.project,
+        worktree = %req.worktree,
+        "handling assign --explain request"
+    );
+
+    let db = state.db.lock().await;
+    let instance =
+        db.get_instance(&req.project, &req.name)?
+            .ok_or_else(|| CoastError::InstanceNotFound {
+                name: req.name.clone(),
+                project: req.project.clone(),
+            })?;
+    let previous_branch = instance.branch.clone();
+    let build_id = instance.build_id.clone();
+    let container_id = instance.container_id.clone().unwrap_or_default();
+    drop(db);
+
+    let cf_data = load_coastfile_data(&req.project);
+    let assign_config = cf_data.assign;
+    let project_root = read_project_root(&req.project);
+
+    let all_service_names: Vec<String> = if cf_data.has_compose {
+        if let Some(ref docker) = state.docker {
+            let rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
+            let svc_ctx = super::compose_context_for_build(&req.project, build_id.as_deref());
+            let svc_cmd = svc_ctx.compose_shell("config --services");
+            let svc_refs: Vec<&str> = svc_cmd.iter().map(std::string::String::as_str).collect();
+            tokio::time::timeout(
+                tokio::time::Duration::from_secs(30),
+                rt.exec_in_coast(&container_id, &svc_refs),
+            )
+            .await
+            .ok()
+            .and_then(std::result::Result::ok)
+            .filter(coast_docker::runtime::ExecResult::success)
+            .map(|r| {
+                r.stdout
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let changed_files: Vec<String> = if !assign_config.rebuild_triggers.is_empty() {
+        if let (Some(ref root), Some(ref prev)) = (&project_root, &previous_branch) {
+            tokio::process::Command::new("git")
+                .args(["diff", "--name-only", &format!("{prev}..{}", req.worktree)])
+                .current_dir(root)
+                .output()
+                .await
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .map(String::from)
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let service_actions = classify_services(&all_service_names, &assign_config, &changed_files);
+
+    let (worktree_exists, worktree_synced) = if let Some(ref root) = project_root {
+        let wt_dir =
+            detect_worktree_dir_from_git(root).unwrap_or_else(|| cf_data.worktree_dir.clone());
+        let wt_path = root.join(&wt_dir).join(&req.worktree);
+        let exists = wt_path.exists();
+        (exists, exists && wt_path.join(".coast-synced").exists())
+    } else {
+        (false, false)
+    };
+
+    let tracked_file_count = match project_root {
+        Some(ref root) => count_tracked_files(root, &assign_config.exclude_paths).await,
+        None => 0,
+    };
+    let gitignored_file_count = match project_root {
+        Some(ref root) => count_gitignored_files(root, &assign_config.exclude_paths).await,
+        None => 0,
+    };
+    let has_bare_install = check_has_bare_install(&req.project, build_id.as_deref());
+
+    let mut services: Vec<coast_core::protocol::AssignExplainService> = service_actions
+        .iter()
+        .map(
+            |(name, action)| coast_core::protocol::AssignExplainService {
+                name: name.clone(),
+                action: format!("{action:?}").to_lowercase(),
+            },
+        )
+        .collect();
+    services.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(coast_core::protocol::AssignExplainResponse {
+        name: req.name,
+        worktree: req.worktree,
+        current_branch: previous_branch,
+        services,
+        exclude_paths: assign_config.exclude_paths,
+        tracked_file_count,
+        gitignored_file_count,
+        worktree_exists,
+        worktree_synced,
+        has_bare_install,
+        changed_files_count: changed_files.len(),
+    })
 }
 
 /// Handle assign with an explicit transition status.
@@ -380,7 +571,8 @@ pub async fn handle_with_status(
         ))
     })?;
 
-    let assign_config = read_assign_config(&req.project);
+    let cf_data = load_coastfile_data(&req.project);
+    let assign_config = cf_data.assign;
     let project_root = read_project_root(&req.project);
 
     db.update_instance_status(&req.project, &req.name, &transition_status)?;
@@ -418,11 +610,15 @@ pub async fn handle_with_status(
             .join("latest");
         let rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
 
+        let step_t = std::time::Instant::now();
         let health_timeout = tokio::time::Duration::from_secs(10);
         let health_check = rt.exec_in_coast(&container_id, &["docker", "info"]);
         match tokio::time::timeout(health_timeout, health_check).await {
             Ok(Ok(r)) if r.success() => {
-                info!("assign: inner daemon healthy");
+                info!(
+                    elapsed_ms = step_t.elapsed().as_millis() as u64,
+                    "assign: inner daemon healthy"
+                );
             }
             Ok(Ok(r)) => {
                 revert_assign_status(state, &revert_project, &revert_name, &prev_status).await;
@@ -458,7 +654,8 @@ pub async fn handle_with_status(
 
         {
             // Step 3: Discover compose service names (skip for bare services)
-            let all_service_names: Vec<String> = if has_compose(&req.project) {
+            let step_t = std::time::Instant::now();
+            let all_service_names: Vec<String> = if cf_data.has_compose {
                 let svc_ctx =
                     super::compose_context_for_build(&req.project, instance.build_id.as_deref());
                 let svc_cmd = svc_ctx.compose_shell("config --services");
@@ -490,36 +687,54 @@ pub async fn handle_with_status(
             } else {
                 Vec::new()
             };
+            info!(
+                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                count = all_service_names.len(),
+                "discovered compose services"
+            );
 
-            // Step 3b: Check rebuild triggers by diffing changed files between branches
-            let changed_files: Vec<String> = if let Some(ref root) = project_root {
-                if let Some(ref prev) = previous_branch {
-                    let diff_output = tokio::process::Command::new("git")
-                        .args([
-                            "diff",
-                            "--name-only",
-                            &format!("{}..{}", prev, req.worktree),
-                        ])
-                        .current_dir(root)
-                        .output()
-                        .await;
-                    diff_output
-                        .ok()
-                        .filter(|o| o.status.success())
-                        .map(|o| {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .filter(|l| !l.trim().is_empty())
-                                .map(String::from)
-                                .collect()
-                        })
-                        .unwrap_or_default()
+            // Step 3b: Check rebuild triggers by diffing changed files between branches.
+            // Skip entirely when no rebuild_triggers are configured (the diff is only
+            // used to downgrade rebuild -> restart when trigger files didn't change).
+            let step_t = std::time::Instant::now();
+            let has_triggers = !assign_config.rebuild_triggers.is_empty();
+            let changed_files: Vec<String> = if has_triggers {
+                if let Some(ref root) = project_root {
+                    if let Some(ref prev) = previous_branch {
+                        let diff_output = tokio::process::Command::new("git")
+                            .args([
+                                "diff",
+                                "--name-only",
+                                &format!("{}..{}", prev, req.worktree),
+                            ])
+                            .current_dir(root)
+                            .output()
+                            .await;
+                        diff_output
+                            .ok()
+                            .filter(|o| o.status.success())
+                            .map(|o| {
+                                String::from_utf8_lossy(&o.stdout)
+                                    .lines()
+                                    .filter(|l| !l.trim().is_empty())
+                                    .map(String::from)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    }
                 } else {
                     Vec::new()
                 }
             } else {
                 Vec::new()
             };
+            info!(
+                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                count = changed_files.len(),
+                "git diff for rebuild triggers"
+            );
 
             // Step 3c: Classify services
             let service_actions =
@@ -558,6 +773,50 @@ pub async fn handle_with_status(
                 "classified services for assign"
             );
 
+            // Pre-compute worktree dir before compose stop so we can
+            // spawn worktree creation concurrently with service shutdown.
+            let (wt_dir, worktree_path) = if let Some(ref root) = project_root {
+                let step_t = std::time::Instant::now();
+                let root_clone = root.clone();
+                let detected =
+                    tokio::task::spawn_blocking(move || detect_worktree_dir_from_git(&root_clone))
+                        .await
+                        .ok()
+                        .flatten();
+                let dir = detected.unwrap_or_else(|| cf_data.worktree_dir.clone());
+                info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %dir, "detected worktree directory");
+                let path = root.join(&dir).join(&req.worktree);
+                (Some(dir), Some(path))
+            } else {
+                (None, None)
+            };
+
+            // Spawn worktree creation early so it runs during compose stop.
+            let wt_child = if let (Some(ref root), Some(ref worktree_path)) =
+                (&project_root, &worktree_path)
+            {
+                if !worktree_path.exists() {
+                    let child = tokio::process::Command::new("git")
+                        .args([
+                            "worktree",
+                            "add",
+                            &worktree_path.to_string_lossy(),
+                            &req.worktree,
+                        ])
+                        .current_dir(root)
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .spawn()
+                        .ok();
+                    Some(child)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let wt_spawn_t = std::time::Instant::now();
+
             // --- Step 3 (progress): Stopping services ---
             emit(
                 &progress,
@@ -591,10 +850,14 @@ pub async fn handle_with_status(
                         stop_cmd.iter().map(std::string::String::as_str).collect();
 
                     info!(services = ?affected_svcs, "stopping affected compose services");
+                    let step_t = std::time::Instant::now();
                     let stop_result = rt.exec_in_coast(&container_id, &stop_refs).await;
                     match stop_result {
                         Ok(r) if r.success() => {
-                            info!("affected compose services stopped");
+                            info!(
+                                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                                "affected compose services stopped"
+                            );
                             for svc in &affected_svcs {
                                 emit(
                                     &progress,
@@ -662,10 +925,48 @@ pub async fn handle_with_status(
 
             if let Some(ref root) = project_root {
                 {
-                    let wt_dir = detect_worktree_dir_from_git(root)
-                        .unwrap_or_else(|| read_worktree_dir(&req.project));
-                    let worktree_path = root.join(&wt_dir).join(&req.worktree);
-                    if !worktree_path.exists() {
+                    let wt_dir = wt_dir.clone().unwrap_or_else(|| ".worktrees".to_string());
+                    let worktree_path = worktree_path
+                        .clone()
+                        .unwrap_or_else(|| root.join(".worktrees").join(&req.worktree));
+                    if let Some(child_opt) = wt_child {
+                        // Collect result from worktree creation spawned before compose stop
+                        if let Some(child) = child_opt {
+                            let wt_output = child.wait_with_output().await.map_err(|e| {
+                                CoastError::git(format!("Failed to create worktree: {e}"))
+                            })?;
+                            if !wt_output.status.success() {
+                                let wt_create =
+                                    create_worktree_fallback(root, &worktree_path, &req.worktree)
+                                        .await?;
+                                if !wt_create.status.success() {
+                                    let stderr = String::from_utf8_lossy(&wt_create.stderr);
+                                    revert_assign_status(
+                                        state,
+                                        &revert_project,
+                                        &revert_name,
+                                        &prev_status,
+                                    )
+                                    .await;
+                                    return Err(CoastError::git(format!(
+                                        "Failed to create worktree for branch '{}': {}",
+                                        req.worktree,
+                                        stderr.trim()
+                                    )));
+                                }
+                            }
+                            info!(elapsed_ms = wt_spawn_t.elapsed().as_millis() as u64, worktree = %req.worktree, path = %worktree_path.display(), "created git worktree");
+                        }
+                        emit(
+                            &progress,
+                            BuildProgressEvent::item(
+                                "Switching worktree",
+                                format!("created {}", req.worktree),
+                                "ok",
+                            ),
+                        )
+                        .await;
+                    } else if !worktree_path.exists() {
                         emit(
                             &progress,
                             BuildProgressEvent::item(
@@ -689,20 +990,9 @@ pub async fn handle_with_status(
                                 CoastError::git(format!("Failed to create worktree: {e}"))
                             })?;
                         if !wt_output.status.success() {
-                            let wt_create = tokio::process::Command::new("git")
-                                .args([
-                                    "worktree",
-                                    "add",
-                                    "-b",
-                                    &req.worktree,
-                                    &worktree_path.to_string_lossy(),
-                                ])
-                                .current_dir(root)
-                                .output()
-                                .await
-                                .map_err(|e| {
-                                    CoastError::git(format!("Failed to create worktree: {e}"))
-                                })?;
+                            let wt_create =
+                                create_worktree_fallback(root, &worktree_path, &req.worktree)
+                                    .await?;
                             if !wt_create.status.success() {
                                 let stderr = String::from_utf8_lossy(&wt_create.stderr);
                                 revert_assign_status(
@@ -719,7 +1009,7 @@ pub async fn handle_with_status(
                                 )));
                             }
                         }
-                        info!(worktree = %req.worktree, path = %worktree_path.display(), "created git worktree");
+                        info!(elapsed_ms = wt_spawn_t.elapsed().as_millis() as u64, worktree = %req.worktree, path = %worktree_path.display(), "created git worktree");
                         emit(
                             &progress,
                             BuildProgressEvent::item(
@@ -748,28 +1038,31 @@ pub async fn handle_with_status(
                     let wt_path_str = worktree_path.to_string_lossy().to_string();
                     let root_str = root.to_string_lossy().to_string();
                     let marker = worktree_path.join(".coast-synced");
+                    let step_t = std::time::Instant::now();
                     if marker.exists() {
                         info!(worktree = %req.worktree, "worktree already synced, skipping gitignored copy");
                     } else {
-                        let copy_script = build_gitignored_sync_script(
-                            &root_str,
-                            &wt_path_str,
-                            &assign_config.exclude_paths,
-                        );
+                        let mut sync_excludes = assign_config.exclude_paths.clone();
+                        if !sync_excludes.iter().any(|p| p == &wt_dir) {
+                            sync_excludes.push(wt_dir.clone());
+                        }
+                        let copy_script =
+                            build_gitignored_sync_script(&root_str, &wt_path_str, &sync_excludes);
                         let copy_result = tokio::process::Command::new("sh")
                             .args(["-c", &copy_script])
                             .output()
                             .await;
                         if let Ok(output) = &copy_result {
                             if output.status.success() {
-                                info!(worktree = %req.worktree, "synced gitignored files to worktree (hardlinks)");
+                                info!(elapsed_ms = step_t.elapsed().as_millis() as u64, worktree = %req.worktree, "synced gitignored files to worktree (hardlinks)");
                             } else {
                                 let stderr = String::from_utf8_lossy(&output.stderr);
-                                tracing::warn!(worktree = %req.worktree, %stderr, "gitignored sync had issues");
+                                tracing::warn!(elapsed_ms = step_t.elapsed().as_millis() as u64, worktree = %req.worktree, %stderr, "gitignored sync had issues");
                             }
                         }
                     }
 
+                    let step_t = std::time::Instant::now();
                     let mount_src = format!("/host-project/{}/{}", wt_dir, req.worktree);
                     let host_root = root.to_string_lossy();
                     let mount_cmd =
@@ -785,7 +1078,7 @@ pub async fn handle_with_status(
                         .await;
                     match &mount_result {
                         Ok(r) if r.success() => {
-                            info!(worktree = %req.worktree, "remounted /workspace to worktree");
+                            info!(elapsed_ms = step_t.elapsed().as_millis() as u64, worktree = %req.worktree, "remounted /workspace to worktree");
                         }
                         Ok(r) => {
                             tracing::warn!(stderr = %r.stderr, "failed to remount /workspace to worktree");
@@ -814,8 +1107,9 @@ pub async fn handle_with_status(
             // "hot" services use a fast path: skip compose down entirely and
             // go straight to `compose up --force-recreate -t 1`. This avoids
             // waiting for graceful shutdown and cuts assign time roughly in half.
-            let project_has_compose = has_compose(&req.project);
+            let project_has_compose = cf_data.has_compose;
 
+            let step_t = std::time::Instant::now();
             if project_has_compose {
                 if all_hot {
                     let ctx = super::compose_context_for_build(
@@ -829,7 +1123,10 @@ pub async fn handle_with_status(
                     let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
                     match &up_result {
                         Ok(r) if r.success() => {
-                            info!("hot assign: compose up --force-recreate completed");
+                            info!(
+                                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                                "hot assign: compose up --force-recreate completed"
+                            );
                         }
                         Ok(r) => {
                             tracing::warn!(stderr = %r.stderr, "hot assign: compose up had issues");
@@ -847,7 +1144,10 @@ pub async fn handle_with_status(
                     let down_refs: Vec<&str> =
                         down_cmd.iter().map(std::string::String::as_str).collect();
                     let _ = rt.exec_in_coast(&container_id, &down_refs).await;
-                    info!("compose down completed after workspace remount");
+                    info!(
+                        elapsed_ms = step_t.elapsed().as_millis() as u64,
+                        "compose down completed after workspace remount"
+                    );
 
                     let up_cmd = ctx.compose_shell("up -d --remove-orphans");
                     let up_refs: Vec<&str> =
@@ -855,7 +1155,10 @@ pub async fn handle_with_status(
                     let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
                     match &up_result {
                         Ok(r) if r.success() => {
-                            info!("compose up completed after workspace remount");
+                            info!(
+                                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                                "compose up completed after workspace remount"
+                            );
                         }
                         Ok(r) => {
                             tracing::warn!(stderr = %r.stderr, "compose up after workspace remount had issues");
@@ -869,12 +1172,6 @@ pub async fn handle_with_status(
 
             // Restart bare services (may coexist with compose)
             if crate::bare_services::has_bare_services(docker, &container_id).await {
-                let stop_cmd = crate::bare_services::generate_stop_command();
-                let _ = rt
-                    .exec_in_coast(&container_id, &["sh", "-c", &stop_cmd])
-                    .await;
-                info!("bare services stopped for branch switch");
-
                 let home = dirs::home_dir().unwrap_or_default();
                 let cf_path = instance
                     .build_id
@@ -898,13 +1195,40 @@ pub async fn handle_with_status(
                     .map(|cf| cf.services)
                     .unwrap_or_default();
 
+                // Save cached dirs before stopping (while current workspace is mounted)
+                if let Some(save_cmd) = crate::bare_services::generate_cache_save_command(&svc_list)
+                {
+                    let step_t = std::time::Instant::now();
+                    let _ = rt
+                        .exec_in_coast(&container_id, &["sh", "-c", &save_cmd])
+                        .await;
+                    info!(
+                        elapsed_ms = step_t.elapsed().as_millis() as u64,
+                        "bare services cache saved"
+                    );
+                }
+
+                let step_t = std::time::Instant::now();
+                let stop_cmd = crate::bare_services::generate_stop_command();
+                let _ = rt
+                    .exec_in_coast(&container_id, &["sh", "-c", &stop_cmd])
+                    .await;
+                info!(
+                    elapsed_ms = step_t.elapsed().as_millis() as u64,
+                    "bare services stopped for branch switch"
+                );
+
                 let start_cmd = crate::bare_services::generate_install_and_start_command(&svc_list);
+                let step_t = std::time::Instant::now();
                 let start_result = rt
                     .exec_in_coast(&container_id, &["sh", "-c", &start_cmd])
                     .await;
                 match &start_result {
                     Ok(r) if r.success() => {
-                        info!("bare services install + start completed after branch switch");
+                        info!(
+                            elapsed_ms = step_t.elapsed().as_millis() as u64,
+                            "bare services install + start completed after branch switch"
+                        );
                     }
                     Ok(r) => {
                         tracing::warn!(
@@ -1082,6 +1406,7 @@ pub async fn handle_with_status(
             .await;
 
             let ctx = super::compose_context_for_build(&req.project, instance.build_id.as_deref());
+            let step_t = std::time::Instant::now();
 
             if !rebuild_svcs.is_empty() {
                 let svc_list = rebuild_svcs.join(" ");
@@ -1151,6 +1476,10 @@ pub async fn handle_with_status(
                 }
             }
 
+            info!(
+                elapsed_ms = step_t.elapsed().as_millis() as u64,
+                "compose services started"
+            );
             emit(
                 &progress,
                 BuildProgressEvent::done("Starting services", "ok"),
@@ -1209,7 +1538,10 @@ pub async fn handle_with_status(
                                     }
                                 });
                             if all_healthy {
-                                info!("all compose services are running after assign");
+                                info!(
+                                    elapsed_ms = start_time.elapsed().as_millis() as u64,
+                                    "all compose services are running after assign"
+                                );
                                 break;
                             }
                         }
@@ -1367,6 +1699,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/x".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1387,6 +1720,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/x".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1412,6 +1746,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/x".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1448,6 +1783,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/x".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1470,6 +1806,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/new".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1509,6 +1846,7 @@ mod tests {
             project: "proj".to_string(),
             worktree: "feature/x".to_string(),
             commit_sha: None,
+            explain: false,
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -1673,11 +2011,25 @@ mod tests {
     }
 
     #[test]
-    fn test_copy_script_uses_rsync_with_link_dest() {
+    fn test_copy_script_uses_git_ls_files() {
         let script =
             build_gitignored_sync_script("/home/user/project", "/home/user/.worktrees/feat", &[]);
         assert!(
-            script.contains("rsync -a --link-dest='/home/user/project'"),
+            script.contains("git ls-files --others --ignored --exclude-standard"),
+            "should use git ls-files to enumerate gitignored files"
+        );
+    }
+
+    #[test]
+    fn test_copy_script_uses_rsync_files_from() {
+        let script =
+            build_gitignored_sync_script("/home/user/project", "/home/user/.worktrees/feat", &[]);
+        assert!(
+            script.contains("--files-from="),
+            "should use rsync --files-from for targeted sync"
+        );
+        assert!(
+            script.contains("--link-dest='/home/user/project'"),
             "should use rsync with --link-dest pointing to project root"
         );
         assert!(
@@ -1687,12 +2039,18 @@ mod tests {
     }
 
     #[test]
-    fn test_copy_script_excludes_all_heavy_dirs() {
+    fn test_copy_script_grep_excludes_heavy_dirs() {
         let script = build_gitignored_sync_script("/root", "/wt", &[]);
+        let grep_idx = script.find("grep -v -E").expect("should have grep");
+        let grep_section = &script[grep_idx..];
         for dir in SYNC_EXCLUDE_DIRS {
+            if *dir == ".git" || *dir == ".coast-synced" {
+                continue;
+            }
+            let escaped = dir.replace('.', "\\.");
             assert!(
-                script.contains(&format!("--exclude='{dir}'")),
-                "rsync should exclude '{dir}'"
+                grep_section.contains(&escaped),
+                "grep pattern should exclude '{dir}'"
             );
         }
     }
@@ -1714,7 +2072,7 @@ mod tests {
             "should check for rsync availability"
         );
         assert!(
-            script.contains("tar -T - -cf -"),
+            script.contains("tar -T"),
             "should fall back to tar pipeline when rsync is missing"
         );
     }
@@ -1723,37 +2081,15 @@ mod tests {
     fn test_exclude_paths_in_sync_script() {
         let extras = vec!["apps/ide".to_string(), "apps/extension".to_string()];
         let script = build_gitignored_sync_script("/root", "/wt", &extras);
-        assert!(
-            script.contains("--exclude='apps/ide'"),
-            "rsync should exclude extra path 'apps/ide'"
-        );
-        assert!(
-            script.contains("--exclude='apps/extension'"),
-            "rsync should exclude extra path 'apps/extension'"
-        );
-    }
-
-    #[test]
-    fn test_exclude_paths_in_tar_fallback() {
-        let extras = vec!["apps/ide".to_string(), "apps/extension".to_string()];
-        let script = build_gitignored_sync_script("/root", "/wt", &extras);
-        assert!(
-            script.contains("apps/ide"),
-            "tar fallback grep pattern should include 'apps/ide'"
-        );
-        assert!(
-            script.contains("apps/extension"),
-            "tar fallback grep pattern should include 'apps/extension'"
-        );
         let grep_idx = script.find("grep -v -E").expect("should have grep");
         let grep_section = &script[grep_idx..];
         assert!(
             grep_section.contains("apps/ide"),
-            "grep section should contain apps/ide"
+            "grep pattern should contain 'apps/ide'"
         );
         assert!(
             grep_section.contains("apps/extension"),
-            "grep section should contain apps/extension"
+            "grep pattern should contain 'apps/extension'"
         );
     }
 
@@ -1857,5 +2193,140 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = super::detect_worktree_dir_from_git(dir.path());
         assert_eq!(result, None, "should return None for non-git directory");
+    }
+
+    #[test]
+    fn test_detect_worktree_dir_with_slash_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "test")
+                .env("GIT_AUTHOR_EMAIL", "test@test.com")
+                .env("GIT_COMMITTER_NAME", "test")
+                .env("GIT_COMMITTER_EMAIL", "test@test.com")
+                .output()
+                .expect("git command failed to start");
+            assert!(
+                out.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        git(&["init", "-b", "main"]);
+        git(&["commit", "--allow-empty", "-m", "init"]);
+        git(&["branch", "testing/assign-speed"]);
+
+        let wt_path = root.join(".worktrees").join("testing").join("assign-speed");
+        std::fs::create_dir_all(wt_path.parent().unwrap()).unwrap();
+        git(&[
+            "worktree",
+            "add",
+            &wt_path.to_string_lossy(),
+            "testing/assign-speed",
+        ]);
+
+        let result = super::detect_worktree_dir_from_git(root);
+        assert_eq!(
+            result,
+            Some(".worktrees".to_string()),
+            "slash branch at .worktrees/testing/assign-speed should return .worktrees, not .worktrees/testing"
+        );
+    }
+
+    #[test]
+    fn test_detect_worktree_dir_multiple_slash_branches() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "test")
+                .env("GIT_AUTHOR_EMAIL", "test@test.com")
+                .env("GIT_COMMITTER_NAME", "test")
+                .env("GIT_COMMITTER_EMAIL", "test@test.com")
+                .output()
+                .expect("git command failed to start");
+            assert!(
+                out.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        git(&["init", "-b", "main"]);
+        git(&["commit", "--allow-empty", "-m", "init"]);
+        git(&["branch", "feature/auth"]);
+        git(&["branch", "testing/speed"]);
+
+        let wt_a = root.join(".worktrees").join("feature").join("auth");
+        let wt_b = root.join(".worktrees").join("testing").join("speed");
+        std::fs::create_dir_all(wt_a.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(wt_b.parent().unwrap()).unwrap();
+        git(&["worktree", "add", &wt_a.to_string_lossy(), "feature/auth"]);
+        git(&["worktree", "add", &wt_b.to_string_lossy(), "testing/speed"]);
+
+        let result = super::detect_worktree_dir_from_git(root);
+        assert_eq!(
+            result,
+            Some(".worktrees".to_string()),
+            "multiple slash branches should return .worktrees"
+        );
+    }
+
+    #[test]
+    fn test_detect_worktree_dir_mixed_flat_and_slash() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "test")
+                .env("GIT_AUTHOR_EMAIL", "test@test.com")
+                .env("GIT_COMMITTER_NAME", "test")
+                .env("GIT_COMMITTER_EMAIL", "test@test.com")
+                .output()
+                .expect("git command failed to start");
+            assert!(
+                out.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        git(&["init", "-b", "main"]);
+        git(&["commit", "--allow-empty", "-m", "init"]);
+        git(&["branch", "feat-a"]);
+        git(&["branch", "testing/speed"]);
+
+        let wt_flat = root.join(".worktrees").join("feat-a");
+        let wt_slash = root.join(".worktrees").join("testing").join("speed");
+        std::fs::create_dir_all(&wt_flat.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&wt_slash.parent().unwrap()).unwrap();
+        git(&["worktree", "add", &wt_flat.to_string_lossy(), "feat-a"]);
+        git(&[
+            "worktree",
+            "add",
+            &wt_slash.to_string_lossy(),
+            "testing/speed",
+        ]);
+
+        let result = super::detect_worktree_dir_from_git(root);
+        assert_eq!(
+            result,
+            Some(".worktrees".to_string()),
+            "mixed flat and slash branches should return .worktrees"
+        );
     }
 }

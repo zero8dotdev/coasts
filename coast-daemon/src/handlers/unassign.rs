@@ -232,7 +232,9 @@ pub async fn handle(
                     warn!(name = %req.name, error = %e, "compose up after unassign failed");
                 }
             }
-        } else if crate::bare_services::has_bare_services(docker, &container_id).await {
+        }
+
+        if crate::bare_services::has_bare_services(docker, &container_id).await {
             let stop_cmd = crate::bare_services::generate_stop_command();
             let _ = rt
                 .exec_in_coast(&container_id, &["sh", "-c", &stop_cmd])

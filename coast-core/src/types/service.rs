@@ -47,4 +47,7 @@ pub struct BareServiceConfig {
     pub restart: RestartPolicy,
     #[serde(default)]
     pub install: Vec<String>,
+    /// Directories (relative to /workspace) to persist across worktree switches.
+    #[serde(default)]
+    pub cache: Vec<String>,
 }

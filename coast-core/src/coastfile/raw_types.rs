@@ -34,6 +34,8 @@ pub(super) struct RawCoastfile {
     #[serde(default)]
     pub services: HashMap<String, RawBareServiceConfig>,
     #[serde(default)]
+    pub healthcheck: HashMap<String, String>,
+    #[serde(default)]
     pub agent_shell: Option<RawAgentShellConfig>,
     #[serde(default)]
     pub unset: Option<RawUnsetConfig>,
@@ -193,6 +195,8 @@ pub(super) struct RawBareServiceConfig {
     pub restart: Option<String>,
     #[serde(default, deserialize_with = "deserialize_string_or_vec")]
     pub install: Vec<String>,
+    #[serde(default)]
+    pub cache: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -4,12 +4,13 @@ import { Link } from 'react-router';
 import { ArrowClockwise, Warning } from '@phosphor-icons/react';
 import type { ProjectName, InstanceName } from '../types/branded';
 import type { ServiceStatus, PortMapping } from '../types/api';
-import { useServices, usePorts, useServiceStopMutation, useServiceStartMutation, useServiceRestartMutation, useServiceRmMutation } from '../api/hooks';
+import { useServices, usePorts, usePortHealth, useServiceStopMutation, useServiceStartMutation, useServiceRestartMutation, useServiceRmMutation } from '../api/hooks';
 import { api } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import DataTable, { type Column } from '../components/DataTable';
 import Toolbar, { type ToolbarAction } from '../components/Toolbar';
 import Modal from '../components/Modal';
+import HealthDot from '../components/HealthDot';
 import { serviceOpKey, useServiceOperations, isInProgress } from '../providers/ServiceOperationsProvider';
 
 interface Props {
@@ -38,6 +39,7 @@ export default function InstanceServicesTab({ project, name, checkedOut }: Props
   const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useServices(project, name);
   const { data: portsData } = usePorts(project, name);
+  const { data: healthData } = usePortHealth(project as string, name as string);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Record<string, string>>({});
@@ -119,7 +121,15 @@ export default function InstanceServicesTab({ project, name, checkedOut }: Props
           return (
             <span className="inline-flex items-center gap-2">
               {isBare ? (
-                <span className="font-medium text-main">{r.name}</span>
+                <>
+                  <HealthDot healthy={healthData?.ports?.find((p) => p.logical_name === r.name)?.healthy} />
+                  <Link
+                    to={`/instance/${project}/${name}/bare-services/${encodeURIComponent(r.name)}`}
+                    className="font-medium text-[var(--primary)] hover:underline"
+                  >
+                    {r.name}
+                  </Link>
+                </>
               ) : (
                 <Link
                   to={`/instance/${project}/${name}/services/${encodeURIComponent(r.name)}`}
@@ -275,8 +285,11 @@ export default function InstanceServicesTab({ project, name, checkedOut }: Props
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           onRowClick={(r) => {
-            if (r.kind === 'bare') return;
-            window.location.hash = `/instance/${project}/${name}/services/${encodeURIComponent(r.name)}`;
+            if (r.kind === 'bare') {
+              window.location.hash = `/instance/${project}/${name}/bare-services/${encodeURIComponent(r.name)}`;
+            } else {
+              window.location.hash = `/instance/${project}/${name}/services/${encodeURIComponent(r.name)}`;
+            }
           }}
           emptyMessage={t('services.empty')}
         />

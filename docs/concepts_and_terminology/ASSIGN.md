@@ -97,12 +97,4 @@ If an assigned worktree is deleted, the `coastd` daemon automatically unassigns 
 >
 > Under the hood, Coast runs `git ls-files` whenever a worktree is mounted or unmounted. In large codebases or repositories with many files, this can add noticeable latency to assign and unassign operations.
 >
-> If parts of your codebase do not need to be rebuilt between assigns, you can tell Coast to skip them using `exclude_paths` in your Coastfile:
->
-> ```toml
-> [assign]
-> default = "restart"
-> exclude_paths = ["docs", "scripts", "test-fixtures"]
-> ```
->
-> Paths listed in `exclude_paths` are ignored during the file diff, which can significantly speed up assign times.
+> Use `exclude_paths` in your Coastfile to skip directories that are irrelevant to your running services. See [Performance Optimizations](PERFORMANCE_OPTIMIZATIONS.md) for a full guide.

@@ -92,6 +92,7 @@ fn test_assign_request_roundtrip() {
         project: "my-app".to_string(),
         worktree: "feature/oauth".to_string(),
         commit_sha: Some("deadbeef".to_string()),
+        explain: false,
     }));
 }
 
@@ -102,6 +103,7 @@ fn test_assign_request_without_commit_sha_roundtrip() {
         project: "my-app".to_string(),
         worktree: "feature/oauth".to_string(),
         commit_sha: None,
+        explain: false,
     }));
 }
 
@@ -1310,4 +1312,55 @@ fn test_lookup_response_roundtrip_no_primary_url() {
             }],
         }],
     }));
+}
+
+#[test]
+fn test_assign_request_explain_roundtrip() {
+    roundtrip_request(Request::Assign(AssignRequest {
+        name: "dev-1".to_string(),
+        project: "my-app".to_string(),
+        worktree: "feature/test".to_string(),
+        commit_sha: None,
+        explain: true,
+    }));
+}
+
+#[test]
+fn test_assign_explain_response_roundtrip() {
+    roundtrip_response(Response::AssignExplain(AssignExplainResponse {
+        name: "dev-1".to_string(),
+        worktree: "feature/test".to_string(),
+        current_branch: Some("main".to_string()),
+        services: vec![
+            AssignExplainService {
+                name: "web".to_string(),
+                action: "hot".to_string(),
+            },
+            AssignExplainService {
+                name: "worker".to_string(),
+                action: "rebuild".to_string(),
+            },
+        ],
+        exclude_paths: vec!["docs".to_string(), ".yarn".to_string()],
+        tracked_file_count: 1500,
+        gitignored_file_count: 8000,
+        worktree_exists: true,
+        worktree_synced: false,
+        has_bare_install: true,
+        changed_files_count: 42,
+    }));
+}
+
+#[test]
+fn test_port_health_changed_event_serialization() {
+    let event = CoastEvent::PortHealthChanged {
+        name: "dev-1".to_string(),
+        project: "my-app".to_string(),
+    };
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(json["event"], "port.health_changed");
+    assert_eq!(json["name"], "dev-1");
+    assert_eq!(json["project"], "my-app");
+    let deserialized: CoastEvent = serde_json::from_value(json).unwrap();
+    assert!(matches!(deserialized, CoastEvent::PortHealthChanged { .. }));
 }

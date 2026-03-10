@@ -398,7 +398,7 @@ export default function DocsViewer({ content, basePath, files }: DocsViewerProps
               <p className="mt-2 text-center text-sm text-muted-ui italic">
                 {caption.split(/(\[[^\]]+\]\([^)]+\))/).map((part, i) => {
                   const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-                  if (linkMatch != null) {
+                  if (linkMatch?.[1] != null && linkMatch[2] != null) {
                     const href = linkMatch[2];
                     const docLink = resolveDocLink(href, basePath);
                     if (docLink != null) {

@@ -14,6 +14,18 @@ pub(super) fn toml_quote(s: &str) -> String {
     format!("{:?}", s)
 }
 
+fn toml_key(key: &str) -> String {
+    if !key.is_empty()
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        key.to_string()
+    } else {
+        toml_quote(key)
+    }
+}
+
 fn format_shared_service_port(port: &SharedServicePort) -> String {
     if port.is_identity_mapping() {
         port.host_port.to_string()
@@ -106,7 +118,7 @@ fn write_numeric_map_section(
     let mut entries: Vec<_> = values.iter().collect();
     entries.sort_by_key(|(name, _)| *name);
     for (name, value) in entries {
-        writeln!(out, "{name} = {value}").unwrap();
+        writeln!(out, "{} = {value}", toml_key(name)).unwrap();
     }
 }
 
@@ -119,13 +131,13 @@ fn write_healthcheck_section(coastfile: &Coastfile, out: &mut String) {
     let mut entries: Vec<_> = coastfile.healthcheck.iter().collect();
     entries.sort_by_key(|(name, _)| *name);
     for (name, path) in entries {
-        writeln!(out, "{name} = {}", toml_quote(path)).unwrap();
+        writeln!(out, "{} = {}", toml_key(name), toml_quote(path)).unwrap();
     }
 }
 
 fn write_shared_services_section(coastfile: &Coastfile, out: &mut String) {
     for service in &coastfile.shared_services {
-        writeln!(out, "\n[shared_services.{}]", service.name).unwrap();
+        writeln!(out, "\n[shared_services.{}]", toml_key(&service.name)).unwrap();
         writeln!(out, "image = {}", toml_quote(&service.image)).unwrap();
         if !service.ports.is_empty() {
             writeln!(
@@ -159,7 +171,7 @@ fn write_shared_services_section(coastfile: &Coastfile, out: &mut String) {
             env_pairs.sort_by_key(|(name, _)| *name);
             let pairs = env_pairs
                 .iter()
-                .map(|(name, value)| format!("{name} = {}", toml_quote(value)))
+                .map(|(name, value)| format!("{} = {}", toml_key(name), toml_quote(value)))
                 .collect::<Vec<_>>();
             write!(out, "{}", pairs.join(", ")).unwrap();
             writeln!(out, " }}").unwrap();
@@ -172,7 +184,7 @@ fn write_shared_services_section(coastfile: &Coastfile, out: &mut String) {
 
 fn write_volumes_section(coastfile: &Coastfile, out: &mut String) {
     for volume in &coastfile.volumes {
-        writeln!(out, "\n[volumes.{}]", volume.name).unwrap();
+        writeln!(out, "\n[volumes.{}]", toml_key(&volume.name)).unwrap();
         let strategy = match volume.strategy {
             VolumeStrategy::Isolated => "isolated",
             VolumeStrategy::Shared => "shared",
@@ -193,12 +205,12 @@ fn write_volumes_section(coastfile: &Coastfile, out: &mut String) {
 
 fn write_secrets_section(coastfile: &Coastfile, out: &mut String) {
     for secret in &coastfile.secrets {
-        writeln!(out, "\n[secrets.{}]", secret.name).unwrap();
+        writeln!(out, "\n[secrets.{}]", toml_key(&secret.name)).unwrap();
         writeln!(out, "extractor = {}", toml_quote(&secret.extractor)).unwrap();
         let mut params: Vec<_> = secret.params.iter().collect();
         params.sort_by_key(|(name, _)| *name);
         for (name, value) in params {
-            writeln!(out, "{name} = {}", toml_quote(value)).unwrap();
+            writeln!(out, "{} = {}", toml_key(name), toml_quote(value)).unwrap();
         }
         let inject = match &secret.inject {
             InjectType::Env(var) => format!("env:{var}"),
@@ -270,7 +282,7 @@ fn write_assign_section(coastfile: &Coastfile, out: &mut String) {
         let mut services: Vec<_> = coastfile.assign.services.iter().collect();
         services.sort_by_key(|(name, _)| *name);
         for (name, action) in services {
-            writeln!(out, "{name} = {}", toml_quote(&action.to_string())).unwrap();
+            writeln!(out, "{} = {}", toml_key(name), toml_quote(&action.to_string())).unwrap();
         }
     }
     if !coastfile.assign.rebuild_triggers.is_empty() {
@@ -283,14 +295,14 @@ fn write_assign_section(coastfile: &Coastfile, out: &mut String) {
                 .map(|path| toml_quote(path))
                 .collect::<Vec<_>>()
                 .join(", ");
-            writeln!(out, "{name} = [{paths}]").unwrap();
+            writeln!(out, "{} = [{paths}]", toml_key(name)).unwrap();
         }
     }
 }
 
 fn write_mcp_servers_section(coastfile: &Coastfile, out: &mut String) {
     for server in &coastfile.mcp_servers {
-        writeln!(out, "\n[mcp.{}]", server.name).unwrap();
+        writeln!(out, "\n[mcp.{}]", toml_key(&server.name)).unwrap();
         if let Some(ref command) = server.command {
             writeln!(out, "command = {}", toml_quote(command)).unwrap();
         }
@@ -321,7 +333,7 @@ fn write_mcp_servers_section(coastfile: &Coastfile, out: &mut String) {
 
 fn write_services_section(coastfile: &Coastfile, out: &mut String) {
     for service in &coastfile.services {
-        writeln!(out, "\n[services.{}]", service.name).unwrap();
+        writeln!(out, "\n[services.{}]", toml_key(&service.name)).unwrap();
         writeln!(out, "command = {}", toml_quote(&service.command)).unwrap();
         if let Some(port) = service.port {
             writeln!(out, "port = {port}").unwrap();
@@ -371,7 +383,7 @@ fn write_agent_shell_section(coastfile: &Coastfile, out: &mut String) {
 
 fn write_mcp_clients_section(coastfile: &Coastfile, out: &mut String) {
     for client in &coastfile.mcp_clients {
-        writeln!(out, "\n[mcp_clients.{}]", client.name).unwrap();
+        writeln!(out, "\n[mcp_clients.{}]", toml_key(&client.name)).unwrap();
         if let Some(ref format) = client.format {
             writeln!(out, "format = {}", toml_quote(format.as_str())).unwrap();
         }
@@ -402,5 +414,93 @@ impl Coastfile {
         write_agent_shell_section(self, &mut out);
         write_mcp_clients_section(self, &mut out);
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::types::{
+        AssignAction, AssignConfig, BareServiceConfig, HostInjectConfig, OmitConfig, RuntimeType,
+        SetupConfig,
+    };
+
+    use super::*;
+
+    #[test]
+    fn standalone_toml_quotes_dotted_keys_and_round_trips() {
+        let mut ports = HashMap::new();
+        ports.insert("http.v2".to_string(), 8080);
+
+        let mut healthcheck = HashMap::new();
+        healthcheck.insert("http.v2".to_string(), "/up".to_string());
+
+        let mut assign_services = HashMap::new();
+        assign_services.insert("laravel.test".to_string(), AssignAction::Restart);
+
+        let mut rebuild_triggers = HashMap::new();
+        rebuild_triggers.insert(
+            "laravel.test".to_string(),
+            vec!["docker-compose.coast.yml".to_string()],
+        );
+
+        let coastfile = Coastfile {
+            name: "proj".to_string(),
+            compose: None,
+            runtime: RuntimeType::Dind,
+            ports,
+            healthcheck,
+            primary_port: None,
+            secrets: vec![],
+            inject: HostInjectConfig {
+                env: vec![],
+                files: vec![],
+            },
+            volumes: vec![],
+            shared_services: vec![],
+            setup: SetupConfig::default(),
+            project_root: std::env::temp_dir(),
+            assign: AssignConfig {
+                default: AssignAction::None,
+                services: assign_services,
+                exclude_paths: vec![],
+                rebuild_triggers,
+            },
+            egress: HashMap::new(),
+            worktree_dir: ".worktrees".to_string(),
+            omit: OmitConfig::default(),
+            mcp_servers: vec![],
+            mcp_clients: vec![],
+            coastfile_type: None,
+            autostart: true,
+            services: vec![BareServiceConfig {
+                name: "worker.main".to_string(),
+                command: "sleep infinity".to_string(),
+                port: Some(9000),
+                restart: crate::types::RestartPolicy::No,
+                install: vec![],
+                cache: vec![],
+            }],
+            agent_shell: None,
+        };
+
+        let serialized = coastfile.to_standalone_toml();
+
+        assert!(serialized.contains("\"http.v2\" = 8080"));
+        assert!(serialized.contains("\"laravel.test\" = \"restart\""));
+        assert!(serialized.contains("\n[services.\"worker.main\"]\n"));
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("coastfile.toml");
+        std::fs::write(&path, &serialized).unwrap();
+
+        let reparsed = Coastfile::from_file(&path).unwrap();
+        assert_eq!(reparsed.ports.get("http.v2"), Some(&8080));
+        assert_eq!(
+            reparsed.assign.services.get("laravel.test"),
+            Some(&AssignAction::Restart)
+        );
+        assert_eq!(reparsed.services[0].name, "worker.main");
     }
 }

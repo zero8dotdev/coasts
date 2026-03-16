@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, RunRequest};
@@ -301,11 +301,37 @@ async fn load_coastfile_resources(
     };
 
     if !coastfile_path.exists() {
+        debug!(
+            project = %req.project,
+            instance = %req.name,
+            path = %coastfile_path.display(),
+            "artifact Coastfile missing while loading run resources"
+        );
         return Ok(result);
     }
-    let Ok(coastfile) = coast_core::coastfile::Coastfile::from_file(coastfile_path) else {
-        return Ok(result);
+    let coastfile = match coast_core::coastfile::Coastfile::from_file(coastfile_path) {
+        Ok(coastfile) => coastfile,
+        Err(error) => {
+            warn!(
+                project = %req.project,
+                instance = %req.name,
+                path = %coastfile_path.display(),
+                error = %error,
+                "failed to parse artifact Coastfile while loading run resources"
+            );
+            return Ok(result);
+        }
     };
+
+    debug!(
+        project = %req.project,
+        instance = %req.name,
+        path = %coastfile_path.display(),
+        port_count = coastfile.ports.len(),
+        volume_count = coastfile.volumes.len(),
+        shared_service_count = coastfile.shared_services.len(),
+        "loaded artifact Coastfile for run resources"
+    );
 
     for (port_name, port_num) in &coastfile.ports {
         let dynamic_port = crate::port_manager::allocate_dynamic_port()?;

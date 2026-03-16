@@ -1,4 +1,4 @@
-use tracing::info;
+use tracing::{debug, info};
 
 use coast_core::error::Result;
 use coast_core::protocol::BuildProgressEvent;
@@ -26,6 +26,12 @@ pub(super) async fn finalize_instance(
     );
 
     let db = state.db.lock().await;
+    debug!(
+        project = %project,
+        instance = %instance_name,
+        pre_allocated_port_count = pre_allocated_ports.len(),
+        "finalizing instance with pre-allocated ports"
+    );
 
     let mut ports: Vec<PortMapping> = Vec::new();
     for mapping in port_mappings_from_pre_allocated_ports(pre_allocated_ports) {

@@ -9,7 +9,8 @@
 /// and always-on dynamic ports. The daemon spawns socat processes that forward
 /// traffic from host ports to coast container ports.
 use std::collections::HashMap;
-use std::net::TcpListener;
+use std::hash::Hasher;
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -28,6 +29,9 @@ const PORT_RANGE_END: u16 = 65535;
 
 /// Maximum number of attempts to find a free port before giving up.
 const MAX_ALLOCATION_ATTEMPTS: u32 = 1000;
+
+const CHECKOUT_BRIDGE_IMAGE: &str = "alpine/socat:latest";
+const CHECKOUT_BRIDGE_LABEL: &str = "coast.role=checkout-bridge";
 
 /// A pair of socat process PIDs for a single port forwarding entry.
 ///
@@ -284,7 +288,288 @@ pub fn allocate_dynamic_port() -> Result<u16> {
 ///
 /// Returns `true` if the port is free (bind succeeds), `false` otherwise.
 pub fn is_port_available(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
+    matches!(inspect_port_binding(port), PortBindStatus::Available)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PortBindStatus {
+    Available,
+    InUse,
+    PermissionDenied,
+    UnexpectedError(String),
+}
+
+fn can_connect_to_port(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(50)).is_ok()
+}
+
+pub fn inspect_port_binding(port: u16) -> PortBindStatus {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(listener) => {
+            drop(listener);
+            PortBindStatus::Available
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => PortBindStatus::InUse,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            if can_connect_to_port(port) {
+                PortBindStatus::InUse
+            } else {
+                PortBindStatus::PermissionDenied
+            }
+        }
+        Err(error) => PortBindStatus::UnexpectedError(error.to_string()),
+    }
+}
+
+pub fn running_in_wsl() -> bool {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
+        return true;
+    }
+
+    std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|value| value.to_ascii_lowercase().contains("microsoft"))
+        .unwrap_or(false)
+}
+
+fn sanitize_docker_name_component(component: &str) -> String {
+    let sanitized = component
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+
+    let trimmed = sanitized.trim_matches('-');
+    if trimmed.is_empty() {
+        "default".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn checkout_bridge_name_hash(project: &str, instance: &str) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    struct Fnv64(u64);
+
+    impl Hasher for Fnv64 {
+        fn finish(&self) -> u64 {
+            self.0
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            for byte in bytes {
+                self.0 ^= u64::from(*byte);
+                self.0 = self.0.wrapping_mul(FNV_PRIME);
+            }
+        }
+    }
+
+    let mut hasher = Fnv64(FNV_OFFSET_BASIS);
+    hasher.write(project.as_bytes());
+    hasher.write(&[0]);
+    hasher.write(instance.as_bytes());
+    hasher.finish()
+}
+
+pub struct CheckoutBridgePort<'a> {
+    pub _logical_name: &'a str,
+    pub canonical_port: u16,
+    pub dynamic_port: u16,
+}
+
+pub fn checkout_bridge_container_name(project: &str, instance: &str) -> String {
+    const PREFIX: &str = "coast-checkout-";
+
+    let hash = format!("{:016x}", checkout_bridge_name_hash(project, instance));
+    let project = sanitize_docker_name_component(project);
+    let instance = sanitize_docker_name_component(instance);
+    let mut base = format!("{project}-{instance}");
+    let max_base_len = 255usize.saturating_sub(PREFIX.len() + 1 + hash.len());
+    if base.len() > max_base_len {
+        base.truncate(max_base_len);
+        base = base.trim_matches('-').to_string();
+    }
+    if base.is_empty() {
+        base = "default".to_string();
+    }
+
+    format!("{PREFIX}{base}-{hash}")
+}
+
+fn run_docker_command(args: &[String]) -> Result<std::process::Output> {
+    Command::new("docker").args(args).output().map_err(|error| {
+        CoastError::port(format!(
+            "Failed to run docker command `docker {}`: {error}",
+            args.join(" ")
+        ))
+    })
+}
+
+fn checkout_bridge_container_ids(project: &str, instance: &str) -> Result<Vec<String>> {
+    let output = run_docker_command(&[
+        "ps".to_string(),
+        "-aq".to_string(),
+        "--filter".to_string(),
+        format!("label={CHECKOUT_BRIDGE_LABEL}"),
+        "--filter".to_string(),
+        format!("label=coast.project={project}"),
+        "--filter".to_string(),
+        format!("label=coast.instance={instance}"),
+    ])?;
+
+    if !output.status.success() {
+        return Err(CoastError::port(format!(
+            "Failed to list checkout bridge containers for '{project}/{instance}': {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
+pub fn remove_checkout_bridge(project: &str, instance: &str) -> Result<()> {
+    let ids = checkout_bridge_container_ids(project, instance)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut args = vec!["rm".to_string(), "-f".to_string()];
+    args.extend(ids);
+    let output = run_docker_command(&args)?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(CoastError::port(format!(
+        "Failed to remove checkout bridge container(s) for '{project}/{instance}': {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )))
+}
+
+#[allow(clippy::cognitive_complexity)]
+pub fn cleanup_orphaned_checkout_bridges() {
+    let Ok(output) = Command::new("docker")
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            &format!("label={CHECKOUT_BRIDGE_LABEL}"),
+        ])
+        .output()
+    else {
+        debug!("docker not available, skipping checkout bridge cleanup");
+        return;
+    };
+
+    if !output.status.success() {
+        debug!("failed to list checkout bridge containers, skipping cleanup");
+        return;
+    }
+
+    let ids = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if ids.is_empty() {
+        debug!("no orphaned checkout bridge containers found");
+        return;
+    }
+
+    let mut args = vec!["rm".to_string(), "-f".to_string()];
+    args.extend(ids);
+    match run_docker_command(&args) {
+        Ok(result) if result.status.success() => {
+            info!("Cleaned up orphaned checkout bridge containers from previous session");
+        }
+        Ok(result) => {
+            debug!(
+                stderr = %String::from_utf8_lossy(&result.stderr),
+                "failed to remove checkout bridge containers"
+            );
+        }
+        Err(error) => {
+            debug!(error = %error, "failed to remove checkout bridge containers");
+        }
+    }
+}
+
+fn checkout_bridge_shell_script(ports: &[CheckoutBridgePort<'_>]) -> String {
+    let mut script = String::from("set -eu\n");
+    for port in ports {
+        script.push_str(&format!(
+            "socat TCP-LISTEN:{},fork,reuseaddr TCP:host.docker.internal:{} &\n",
+            port.canonical_port, port.dynamic_port
+        ));
+    }
+    script.push_str("wait\n");
+    script
+}
+
+pub fn start_checkout_bridge(
+    project: &str,
+    instance: &str,
+    ports: &[CheckoutBridgePort<'_>],
+) -> Result<()> {
+    if ports.is_empty() {
+        return Ok(());
+    }
+
+    let name = checkout_bridge_container_name(project, instance);
+    let _ = remove_checkout_bridge(project, instance);
+
+    let mut args = vec![
+        "run".to_string(),
+        "-d".to_string(),
+        "--name".to_string(),
+        name.clone(),
+        "--label".to_string(),
+        CHECKOUT_BRIDGE_LABEL.to_string(),
+        "--label".to_string(),
+        format!("coast.project={project}"),
+        "--label".to_string(),
+        format!("coast.instance={instance}"),
+        "--add-host".to_string(),
+        "host.docker.internal:host-gateway".to_string(),
+        "--entrypoint".to_string(),
+        "sh".to_string(),
+    ];
+    for port in ports {
+        args.push("-p".to_string());
+        args.push(format!("{}:{}", port.canonical_port, port.canonical_port));
+    }
+    args.push(CHECKOUT_BRIDGE_IMAGE.to_string());
+    args.push("-lc".to_string());
+    args.push(checkout_bridge_shell_script(ports));
+
+    let output = run_docker_command(&args)?;
+    if !output.status.success() {
+        return Err(CoastError::port(format!(
+            "Failed to start WSL checkout bridge for '{project}/{instance}': {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    info!(
+        container = %name,
+        port_count = ports.len(),
+        "Started WSL checkout bridge container"
+    );
+    Ok(())
 }
 
 /// Build the socat command arguments for canonical port forwarding.
@@ -364,7 +649,7 @@ pub fn spawn_socat(cmd: &[String]) -> Result<u32> {
         CoastError::port(format!(
             "Failed to spawn socat process `{}`: {}. \
              Ensure socat is installed (e.g., `brew install socat` on macOS, \
-             `apt-get install socat` on Ubuntu).",
+             `sudo apt-get install socat` on Ubuntu).",
             cmd.join(" "),
             e
         ))
@@ -419,7 +704,7 @@ pub fn spawn_socat_verified(cmd: &[String], listen_port: u16) -> Result<u32> {
 
     loop {
         let healthy = !process_looks_stale(pid);
-        let port_bound = !is_port_available(listen_port);
+        let port_bound = can_connect_to_port(listen_port);
 
         if healthy && port_bound {
             return Ok(pid);
@@ -588,6 +873,64 @@ mod tests {
     }
 
     #[test]
+    fn test_running_in_wsl_detects_environment_marker() {
+        let _guard = env_lock().lock().unwrap();
+        let old_distro = std::env::var_os("WSL_DISTRO_NAME");
+        let old_interop = std::env::var_os("WSL_INTEROP");
+        unsafe {
+            std::env::set_var("WSL_DISTRO_NAME", "Ubuntu");
+            std::env::remove_var("WSL_INTEROP");
+        }
+
+        assert!(running_in_wsl());
+
+        unsafe {
+            match old_distro {
+                Some(value) => std::env::set_var("WSL_DISTRO_NAME", value),
+                None => std::env::remove_var("WSL_DISTRO_NAME"),
+            }
+            match old_interop {
+                Some(value) => std::env::set_var("WSL_INTEROP", value),
+                None => std::env::remove_var("WSL_INTEROP"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_checkout_bridge_container_name_sanitizes_components() {
+        let name = checkout_bridge_container_name("My.App", "feat/branch");
+        assert!(name.starts_with("coast-checkout-my-app-feat-branch-"));
+    }
+
+    #[test]
+    fn test_checkout_bridge_container_name_disambiguates_colliding_sanitized_names() {
+        let dotted = checkout_bridge_container_name("My.App", "feat/branch");
+        let dashed = checkout_bridge_container_name("my-app", "feat-branch");
+
+        assert_ne!(dotted, dashed);
+    }
+
+    #[test]
+    fn test_checkout_bridge_shell_script_includes_all_ports() {
+        let script = checkout_bridge_shell_script(&[
+            CheckoutBridgePort {
+                _logical_name: "web",
+                canonical_port: 80,
+                dynamic_port: 57072,
+            },
+            CheckoutBridgePort {
+                _logical_name: "https",
+                canonical_port: 443,
+                dynamic_port: 64424,
+            },
+        ]);
+
+        assert!(script.contains("TCP-LISTEN:80,fork,reuseaddr TCP:host.docker.internal:57072"));
+        assert!(script.contains("TCP-LISTEN:443,fork,reuseaddr TCP:host.docker.internal:64424"));
+        assert!(script.ends_with("wait\n"));
+    }
+
+    #[test]
     fn test_allocate_dynamic_port() {
         let port = allocate_dynamic_port().unwrap();
 
@@ -660,6 +1003,51 @@ mod tests {
         );
 
         drop(listener);
+    }
+
+    #[test]
+    fn test_inspect_port_binding_on_free_port() {
+        assert_eq!(inspect_port_binding(0), PortBindStatus::Available);
+    }
+
+    #[test]
+    fn test_inspect_port_binding_on_occupied_port() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        assert_eq!(inspect_port_binding(port), PortBindStatus::InUse);
+
+        drop(listener);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_inspect_port_binding_permission_denied_on_restricted_low_port() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let Ok(raw_threshold) =
+            std::fs::read_to_string("/proc/sys/net/ipv4/ip_unprivileged_port_start")
+        else {
+            return;
+        };
+        let Ok(threshold) = raw_threshold.trim().parse::<u16>() else {
+            return;
+        };
+        if threshold <= 1 {
+            return;
+        }
+
+        let restricted_port = [1_u16, 2, 3, 7, 9, 13]
+            .into_iter()
+            .find(|port| *port < threshold)
+            .unwrap_or(1);
+
+        assert_eq!(
+            inspect_port_binding(restricted_port),
+            PortBindStatus::PermissionDenied
+        );
     }
 
     #[test]
@@ -911,7 +1299,11 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("exited before binding") || err.contains("did not bind the port"));
+        assert!(
+            err.contains("exited before binding")
+                || err.contains("did not bind the port")
+                || err.contains("Failed to spawn socat process")
+        );
     }
 
     #[test]
